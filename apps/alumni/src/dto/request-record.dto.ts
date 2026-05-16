@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { DocumentType } from '../interfaces/alumni.interface';
 
 export class RequestRecordDto {
@@ -14,4 +14,13 @@ export class RequestRecordDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsIn(['pickup', 'delivery', 'courier'])
+  @IsOptional()
+  delivery_method?: 'pickup' | 'delivery' | 'courier';
+
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  number_of_copies?: number;
 }
