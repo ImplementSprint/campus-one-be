@@ -4,16 +4,19 @@ import { supabase } from '../../libs/database/supabase';
 @Injectable()
 export class GradesService {
   async getGrades(userId: string) {
-    const { data: ap } = await supabase.from('applicant_profiles')
+    const applicationDb = supabase.schema('application');
+    const studentDb = supabase.schema('student');
+
+    const { data: ap } = await applicationDb.from('applicant_profiles')
       .select('first_name, last_name, program').eq('id', userId).maybeSingle();
     const studentName = ap ? `${ap.first_name} ${ap.last_name}` : '';
     const program = ap?.program ?? '';
 
-    const { data: sa } = await supabase.from('student_accounts')
+    const { data: sa } = await studentDb.from('student_accounts')
       .select('id').eq('applicant_id', userId).maybeSingle();
     if (!sa) return { studentName, program, grades: [], totalUnits: 0, gwa: '0.00' };
 
-    const { data: gradesData } = await supabase.from('grades')
+    const { data: gradesData } = await studentDb.from('grades')
       .select('final_grade, remarks, subjects!inner(code, title, units)').eq('student_id', sa.id);
 
     const grades = (gradesData || []).map((r: any) => ({
@@ -28,10 +31,11 @@ export class GradesService {
   }
 
   async getDeficiencies(userId: string) {
-    const { data: sa } = await supabase.from('student_accounts')
+    const studentDb = supabase.schema('student');
+    const { data: sa } = await studentDb.from('student_accounts')
       .select('id').eq('applicant_id', userId).maybeSingle();
     if (!sa) return [];
-    const { data } = await supabase.from('grades')
+    const { data } = await studentDb.from('grades')
       .select('final_grade, remarks, subjects!inner(code, title)')
       .eq('student_id', sa.id).in('remarks', ['Failed', 'Incomplete']);
     return (data || []).map((d: any) => ({
@@ -41,16 +45,19 @@ export class GradesService {
   }
 
   async getGraduation(userId: string) {
-    const { data: ap } = await supabase.from('applicant_profiles')
+    const applicationDb = supabase.schema('application');
+    const studentDb = supabase.schema('student');
+
+    const { data: ap } = await applicationDb.from('applicant_profiles')
       .select('first_name, last_name, program').eq('id', userId).maybeSingle();
     const studentName = ap ? `${ap.first_name} ${ap.last_name}` : '';
     const program = ap?.program ?? '';
 
-    const { data: sa } = await supabase.from('student_accounts')
+    const { data: sa } = await studentDb.from('student_accounts')
       .select('id, year_level').eq('applicant_id', userId).maybeSingle();
     if (!sa) return { studentName, program, yearLevel: null, grades: [] };
 
-    const { data: gradesData } = await supabase.from('grades')
+    const { data: gradesData } = await studentDb.from('grades')
       .select('final_grade, remarks, subjects!inner(code, title, units)')
       .eq('student_id', sa.id).not('final_grade', 'is', null);
 

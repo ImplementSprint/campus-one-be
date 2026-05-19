@@ -16,7 +16,7 @@
 -- Tracks all alumni registration events (internal + legacy paths)
 -- Also used to log graduation.verified.v1 events from Kafka
 -- ============================================================
-CREATE TABLE IF NOT EXISTS alumni_reg_activity_logs (
+CREATE TABLE IF NOT EXISTS alumni.alumni_reg_activity_logs (
   -- Part A: Mandatory 5-column template (NO CONSTRAINTS)
   log_id          UUID,
   created_at      TIMESTAMP,
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS alumni_reg_activity_logs (
 -- Tracks document requests (TOR, Diploma, Good Moral, Certificate)
 -- Independent from alumni_reg_activity_logs — no FK between them
 -- ============================================================
-CREATE TABLE IF NOT EXISTS alumni_record_requests (
+CREATE TABLE IF NOT EXISTS alumni.alumni_record_requests (
   -- Part A: Mandatory 5-column template (NO CONSTRAINTS)
   log_id          UUID,
   created_at      TIMESTAMP,

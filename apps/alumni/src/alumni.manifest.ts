@@ -12,7 +12,7 @@ export const AlumniManifest = {
     'Manage alumni registrations, official document requests, and graduation event tracking.',
   routes: ['/api/v1/alumni', '/api/v1/alumni/records'],
   requiredServices: ['platform', 'notifications'],
-  dbSchema: 'public',
+  dbSchema: 'alumni',
   featureFlags: [
     'alumni.legacy_registration',   // Allows registration without a prior student record
     'alumni.record_requests',       // Document request hub (TOR, Diploma, etc.)

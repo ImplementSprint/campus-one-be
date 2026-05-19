@@ -12,7 +12,7 @@ export const ApplicationManifest = {
     'Handles applicant application processing, admission workflows, and application status management.',
   routes: ['/api/application'],
   requiredServices: ['platform'],
-  dbSchema: 'public',
+  dbSchema: 'application',
   featureFlags: [
     'application.health_check',   // Service health verification endpoint
     'application.list',           // List all submitted applications

@@ -12,7 +12,7 @@ export const EnrollmentManifest = {
     'Manage subject offerings, student enrollment submission, enrollment status tracking, and enrollment history.',
   routes: ['/api/enrollment'],
   requiredServices: ['platform'],
-  dbSchema: 'public',
+  dbSchema: 'enrollment',
   featureFlags: [
     'enrollment.get_offerings',   // Fetch available subject offerings filtered by program and year level
     'enrollment.submit',          // Submit a student enrollment with selected class assignments

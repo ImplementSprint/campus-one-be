@@ -15,7 +15,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = enrollment, academics, public
 AS $$
 DECLARE
   v_enrollment_id uuid;
@@ -30,7 +30,7 @@ BEGIN
 
   -- Guard: reject duplicate active enrollment
   IF EXISTS (
-    SELECT 1 FROM public.enrollments
+    SELECT 1 FROM enrollment.enrollments
     WHERE student_id = p_student_id
       AND school_year = p_school_year
       AND term = p_term
@@ -43,7 +43,7 @@ BEGIN
 
   -- Acquire row-level locks on all targeted offerings (prevents concurrent over-enrollment)
   PERFORM id
-  FROM public.subject_offerings
+  FROM enrollment.subject_offerings
   WHERE id = ANY(p_offering_ids)
   ORDER BY id  -- consistent ordering prevents deadlocks
   FOR UPDATE;
@@ -51,7 +51,7 @@ BEGIN
   -- Slot availability check (after lock is held)
   FOR v_offering IN
     SELECT id, slots_taken, slots_total
-    FROM public.subject_offerings
+    FROM enrollment.subject_offerings
     WHERE id = ANY(p_offering_ids)
   LOOP
     IF v_offering.slots_taken >= v_offering.slots_total THEN
@@ -62,7 +62,7 @@ BEGIN
   END LOOP;
 
   -- Create enrollment record
-  INSERT INTO public.enrollments (student_id, school_year, term, status, total_units)
+  INSERT INTO enrollment.enrollments (student_id, school_year, term, status, total_units)
   VALUES (
     p_student_id,
     p_school_year,
@@ -70,8 +70,8 @@ BEGIN
     'submitted',
     (
       SELECT COALESCE(SUM(s.units), 0)
-      FROM public.subject_offerings so
-      JOIN public.subjects s ON s.id = so.subject_id
+      FROM enrollment.subject_offerings so
+      JOIN academics.subjects s ON s.id = so.subject_id
       WHERE so.id = ANY(p_offering_ids)
     )
   )
@@ -79,10 +79,10 @@ BEGIN
 
   -- Insert enrollment items and increment slots
   FOREACH v_offering_id IN ARRAY p_offering_ids LOOP
-    INSERT INTO public.enrollment_items (enrollment_id, offering_id)
+    INSERT INTO enrollment.enrollment_items (enrollment_id, offering_id)
     VALUES (v_enrollment_id, v_offering_id);
 
-    UPDATE public.subject_offerings
+    UPDATE enrollment.subject_offerings
     SET slots_taken = slots_taken + 1
     WHERE id = v_offering_id;
   END LOOP;

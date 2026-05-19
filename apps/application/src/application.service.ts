@@ -11,6 +11,7 @@ export class ApplicationService {
     (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY) as string,
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
+  private readonly db = this.supabase.schema('application');
 
   getHello(): string {
     return 'Application service is running.';
@@ -24,7 +25,7 @@ export class ApplicationService {
 
   async logAdmissionEvent(dto: any): Promise<ServiceResponse<{ id: string }>> {
     this.ensureSupabaseConfig();
-    const { data, error } = await this.supabase
+    const { data, error } = await this.db
       .from('Admissions_Activity_Logs')
       .insert({
         event_type: dto.event_type,
@@ -40,7 +41,7 @@ export class ApplicationService {
 
   async createApplicantProfile(dto: any): Promise<ServiceResponse<{ id: string }>> {
     const applicantId = randomUUID();
-    const { error } = await this.supabase.from('applicant_profiles').insert({
+    const { error } = await this.db.from('applicant_profiles').insert({
       id: applicantId,
       email: dto.email,
       school_level: dto.school_level,
@@ -55,7 +56,7 @@ export class ApplicationService {
   }
 
   async submitApplication(applicantId: string): Promise<ServiceResponse<{ reference_number: string }>> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.db
       .from('applicant_profiles')
       .update({
         application_submitted_at: new Date().toISOString(),
@@ -69,7 +70,7 @@ export class ApplicationService {
   }
 
   async trackApplication(email: string, referenceNumber: string): Promise<ServiceResponse<{ id: string }>> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.db
       .from('applicant_profiles')
       .select('id')
       .eq('email', email)
@@ -81,7 +82,7 @@ export class ApplicationService {
 
   async saveApplicantProfile(dto: any): Promise<ServiceResponse<{ id: string }>> {
     const fullName = `${dto.first_name} ${dto.last_name}`.trim();
-    const { error } = await this.supabase
+    const { error } = await this.db
       .from('applicant_profiles')
       .update({
         first_name: dto.first_name,
@@ -111,7 +112,7 @@ export class ApplicationService {
     if (storageError) return { data: null, error: { message: storageError.message } };
 
     const { data: urlData } = this.supabase.storage.from('applicant-documents').getPublicUrl(filePath);
-    const { data, error: dbError } = await this.supabase
+    const { data, error: dbError } = await this.db
       .from('applicant_documents')
       .insert({
         applicant_id: dto.applicant_id,
@@ -129,7 +130,7 @@ export class ApplicationService {
   }
 
   async getApplicantAdmissionResult(applicantId: string): Promise<ServiceResponse<any>> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.db
       .from('admissions_results')
       .select(
         'id, applicant_id, status, noa_url, exam_permit_url, exam_date, exam_time, exam_venue, permit_number, date_issued, applicant_profiles ( full_name, program, school_level, applicant_type )',
@@ -141,7 +142,7 @@ export class ApplicationService {
   }
 
   async saveParentInformation(payload: any): Promise<ServiceResponse<{ id: string }>> {
-    const { error } = await this.supabase
+    const { error } = await this.db
       .from('parent_information')
       .upsert(payload, { onConflict: 'applicant_id' });
     if (error) return { data: null, error: { message: error.message } };
@@ -149,7 +150,7 @@ export class ApplicationService {
   }
 
   async saveAcademicBackground(payload: any): Promise<ServiceResponse<{ count: number }>> {
-    await this.supabase.from('academic_background').delete().eq('applicant_id', payload.applicant_id);
+    await this.db.from('academic_background').delete().eq('applicant_id', payload.applicant_id);
     const records = (payload.entries || []).map((entry: any) => ({
       applicant_id: payload.applicant_id,
       grade_level: entry.grade_level,
@@ -157,13 +158,13 @@ export class ApplicationService {
       completion_year: entry.completion_year,
     }));
     if (records.length === 0) return { data: { count: 0 }, error: null };
-    const { error } = await this.supabase.from('academic_background').insert(records);
+    const { error } = await this.db.from('academic_background').insert(records);
     if (error) return { data: null, error: { message: error.message } };
     return { data: { count: records.length }, error: null };
   }
 
   async saveAlumniRelatives(payload: any): Promise<ServiceResponse<{ count: number }>> {
-    await this.supabase.from('alumni_relatives').delete().eq('applicant_id', payload.applicant_id);
+    await this.db.from('alumni_relatives').delete().eq('applicant_id', payload.applicant_id);
     const records = (payload.relatives || []).map((relative: any) => ({
       applicant_id: payload.applicant_id,
       name: relative.name,
@@ -173,23 +174,23 @@ export class ApplicationService {
       contact_number: relative.contact_number,
     }));
     if (records.length === 0) return { data: { count: 0 }, error: null };
-    const { error } = await this.supabase.from('alumni_relatives').insert(records);
+    const { error } = await this.db.from('alumni_relatives').insert(records);
     if (error) return { data: null, error: { message: error.message } };
     return { data: { count: records.length }, error: null };
   }
 
   async saveProgramSelection(payload: any): Promise<ServiceResponse<{ id: string }>> {
-    const { error } = await this.supabase
+    const { error } = await this.db
       .from('program_selections')
       .upsert(payload, { onConflict: 'applicant_id' });
     if (error) return { data: null, error: { message: error.message } };
     const programName = payload.college_program || payload.senior_high_track || payload.school_level;
-    await this.supabase.from('applicant_profiles').update({ program: programName }).eq('id', payload.applicant_id);
+    await this.db.from('applicant_profiles').update({ program: programName }).eq('id', payload.applicant_id);
     return { data: { id: payload.applicant_id }, error: null };
   }
 
   async fetchApplicationStatus(email: string, referenceNumber: string): Promise<ServiceResponse<any>> {
-    const { data: appData, error: appError } = await this.supabase
+    const { data: appData, error: appError } = await this.db
       .from('applicant_profiles')
       .select('*')
       .eq('email', email)
@@ -197,7 +198,7 @@ export class ApplicationService {
       .single();
     if (appError || !appData) return { data: null, error: { message: 'Invalid email or reference number' } };
 
-    const { data: docsData } = await this.supabase
+    const { data: docsData } = await this.db
       .from('applicant_documents')
       .select('*')
       .eq('applicant_id', appData.id)
@@ -239,7 +240,7 @@ export class ApplicationService {
     applicantId: string;
     error?: string;
   }> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.db
       .from('applicant_profiles')
       .select('id')
       .eq('email', email)
@@ -250,7 +251,7 @@ export class ApplicationService {
   }
 
   async fetchAdminApplications(): Promise<ServiceResponse<any[]>> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.db
       .from('applicant_profiles')
       .select('*')
       .not('application_submitted_at', 'is', null)
@@ -260,7 +261,7 @@ export class ApplicationService {
   }
 
   async fetchAdminApplicationDetail(applicationId: string): Promise<ServiceResponse<any>> {
-    const { data: profile, error: profileError } = await this.supabase
+    const { data: profile, error: profileError } = await this.db
       .from('applicant_profiles')
       .select('*')
       .eq('id', applicationId)
@@ -269,11 +270,11 @@ export class ApplicationService {
 
     const [{ data: parentInfo }, { data: academicBg }, { data: alumni }, { data: documents }, { data: programSelection }] =
       await Promise.all([
-        this.supabase.from('parent_information').select('*').eq('applicant_id', applicationId).single(),
-        this.supabase.from('academic_background').select('*').eq('applicant_id', applicationId).order('grade_level', { ascending: true }),
-        this.supabase.from('alumni_relatives').select('*').eq('applicant_id', applicationId),
-        this.supabase.from('applicant_documents').select('*').eq('applicant_id', applicationId).order('submitted_at', { ascending: false }),
-        this.supabase.from('program_selections').select('*').eq('applicant_id', applicationId).single(),
+        this.db.from('parent_information').select('*').eq('applicant_id', applicationId).single(),
+        this.db.from('academic_background').select('*').eq('applicant_id', applicationId).order('grade_level', { ascending: true }),
+        this.db.from('alumni_relatives').select('*').eq('applicant_id', applicationId),
+        this.db.from('applicant_documents').select('*').eq('applicant_id', applicationId).order('submitted_at', { ascending: false }),
+        this.db.from('program_selections').select('*').eq('applicant_id', applicationId).single(),
       ]);
 
     return {
@@ -300,7 +301,7 @@ export class ApplicationService {
     };
 
     if (status === 'Passed') {
-      const { data: appNumber } = await this.supabase.rpc('generate_applicant_number');
+      const { data: appNumber } = await this.db.rpc('generate_applicant_number');
       updateData.applicant_number = appNumber;
     }
 
@@ -308,13 +309,13 @@ export class ApplicationService {
       updateData.rejection_reason = rejectionReason;
     }
 
-    const { error } = await this.supabase.from('applicant_profiles').update(updateData).eq('id', applicationId);
+    const { error } = await this.db.from('applicant_profiles').update(updateData).eq('id', applicationId);
     if (error) return { data: null, error: { message: error.message } };
     return { data: { success: true }, error: null };
   }
 
   async fetchAdminDashboardStats(): Promise<ServiceResponse<{ total: number; pending: number; accepted: number; rejected: number }>> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.db
       .from('applicant_profiles')
       .select('status')
       .not('application_submitted_at', 'is', null);
@@ -337,7 +338,7 @@ export class ApplicationService {
     department: string,
     program: string,
   ): Promise<ServiceResponse<{ success: boolean }>> {
-    const { error } = await this.supabase
+    const { error } = await this.db
       .from('program_selections')
       .update({
         college_department: department,

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.students (
+CREATE TABLE IF NOT EXISTS academics.students (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
   student_number text UNIQUE,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS public.students (
   created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.subjects (
+CREATE TABLE IF NOT EXISTS academics.subjects (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   code text UNIQUE NOT NULL,
   title text NOT NULL,
@@ -38,9 +38,9 @@ CREATE TABLE IF NOT EXISTS public.subjects (
   created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.subject_offerings (
+CREATE TABLE IF NOT EXISTS enrollment.subject_offerings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  subject_id uuid NOT NULL REFERENCES public.subjects(id) ON DELETE CASCADE,
+  subject_id uuid NOT NULL REFERENCES academics.subjects(id) ON DELETE CASCADE,
   term text NOT NULL,
   school_year text NOT NULL,
   section text NOT NULL,
@@ -55,9 +55,9 @@ CREATE TABLE IF NOT EXISTS public.subject_offerings (
   created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.enrollments (
+CREATE TABLE IF NOT EXISTS enrollment.enrollments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  student_id uuid NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+  student_id uuid NOT NULL REFERENCES academics.students(id) ON DELETE CASCADE,
   school_year text NOT NULL,
   term text NOT NULL,
   status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'approved', 'paid', 'cancelled')),
@@ -65,18 +65,18 @@ CREATE TABLE IF NOT EXISTS public.enrollments (
   created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.enrollment_items (
+CREATE TABLE IF NOT EXISTS enrollment.enrollment_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  enrollment_id uuid NOT NULL REFERENCES public.enrollments(id) ON DELETE CASCADE,
-  offering_id uuid NOT NULL REFERENCES public.subject_offerings(id) ON DELETE CASCADE,
+  enrollment_id uuid NOT NULL REFERENCES enrollment.enrollments(id) ON DELETE CASCADE,
+  offering_id uuid NOT NULL REFERENCES enrollment.subject_offerings(id) ON DELETE CASCADE,
   created_at timestamptz DEFAULT now(),
   UNIQUE (enrollment_id, offering_id)
 );
 
-CREATE TABLE IF NOT EXISTS public.grades (
+CREATE TABLE IF NOT EXISTS academics.grades (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  student_id uuid NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
-  subject_id uuid NOT NULL REFERENCES public.subjects(id) ON DELETE CASCADE,
+  student_id uuid NOT NULL REFERENCES academics.students(id) ON DELETE CASCADE,
+  subject_id uuid NOT NULL REFERENCES academics.subjects(id) ON DELETE CASCADE,
   school_year text NOT NULL,
   term text NOT NULL,
   final_grade numeric(4,2),
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS public.grades (
   created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.documents (
+CREATE TABLE IF NOT EXISTS academics.documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   doc_type text NOT NULL,
@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
   created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.notifications (
+CREATE TABLE IF NOT EXISTS academics.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   title text NOT NULL,
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 
 -- ─── Add updated_at if table already existed without it ───────────────────────
 
-ALTER TABLE public.subject_offerings
+ALTER TABLE enrollment.subject_offerings
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
 -- ─── Trigger: auto-update updated_at on subject_offerings ────────────────────
@@ -123,10 +123,10 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger
     WHERE tgname = 'subject_offerings_updated_at'
-      AND tgrelid = 'public.subject_offerings'::regclass
+      AND tgrelid = 'enrollment.subject_offerings'::regclass
   ) THEN
     CREATE TRIGGER subject_offerings_updated_at
-      BEFORE UPDATE ON public.subject_offerings
+      BEFORE UPDATE ON enrollment.subject_offerings
       FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
   END IF;
 END;
@@ -135,14 +135,14 @@ $$;
 -- ─── RLS ─────────────────────────────────────────────────────────────────────
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.subject_offerings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.enrollment_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.grades ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE academics.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE academics.subjects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE enrollment.subject_offerings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE enrollment.enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE enrollment.enrollment_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE academics.grades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE academics.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE academics.notifications ENABLE ROW LEVEL SECURITY;
 
 -- profiles
 DO $$ BEGIN
@@ -160,43 +160,43 @@ END; $$;
 -- students
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='students' AND policyname='students_select_own') THEN
-    CREATE POLICY students_select_own ON public.students FOR SELECT USING (user_id = auth.uid());
+    CREATE POLICY students_select_own ON academics.students FOR SELECT USING (user_id = auth.uid());
   END IF;
 END; $$;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='students' AND policyname='students_update_own') THEN
-    CREATE POLICY students_update_own ON public.students FOR UPDATE USING (user_id = auth.uid());
+    CREATE POLICY students_update_own ON academics.students FOR UPDATE USING (user_id = auth.uid());
   END IF;
 END; $$;
 
 -- subjects (public read)
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='subjects' AND policyname='subjects_public_read') THEN
-    CREATE POLICY subjects_public_read ON public.subjects FOR SELECT USING (true);
+    CREATE POLICY subjects_public_read ON academics.subjects FOR SELECT USING (true);
   END IF;
 END; $$;
 
 -- subject_offerings (public read)
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='subject_offerings' AND policyname='subject_offerings_public_read') THEN
-    CREATE POLICY subject_offerings_public_read ON public.subject_offerings FOR SELECT USING (true);
+    CREATE POLICY subject_offerings_public_read ON enrollment.subject_offerings FOR SELECT USING (true);
   END IF;
 END; $$;
 
 -- enrollments
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='enrollments' AND policyname='enrollments_select_own') THEN
-    CREATE POLICY enrollments_select_own ON public.enrollments FOR SELECT USING (
-      student_id IN (SELECT id FROM public.students WHERE user_id = auth.uid())
+    CREATE POLICY enrollments_select_own ON enrollment.enrollments FOR SELECT USING (
+      student_id IN (SELECT id FROM academics.students WHERE user_id = auth.uid())
     );
   END IF;
 END; $$;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='enrollments' AND policyname='enrollments_insert_own') THEN
-    CREATE POLICY enrollments_insert_own ON public.enrollments FOR INSERT WITH CHECK (
-      student_id IN (SELECT id FROM public.students WHERE user_id = auth.uid())
+    CREATE POLICY enrollments_insert_own ON enrollment.enrollments FOR INSERT WITH CHECK (
+      student_id IN (SELECT id FROM academics.students WHERE user_id = auth.uid())
     );
   END IF;
 END; $$;
@@ -204,10 +204,10 @@ END; $$;
 -- enrollment_items
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='enrollment_items' AND policyname='enrollment_items_select_own') THEN
-    CREATE POLICY enrollment_items_select_own ON public.enrollment_items FOR SELECT USING (
+    CREATE POLICY enrollment_items_select_own ON enrollment.enrollment_items FOR SELECT USING (
       enrollment_id IN (
-        SELECT e.id FROM public.enrollments e
-        JOIN public.students s ON s.id = e.student_id
+        SELECT e.id FROM enrollment.enrollments e
+        JOIN academics.students s ON s.id = e.student_id
         WHERE s.user_id = auth.uid()
       )
     );
@@ -216,10 +216,10 @@ END; $$;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='enrollment_items' AND policyname='enrollment_items_insert_own') THEN
-    CREATE POLICY enrollment_items_insert_own ON public.enrollment_items FOR INSERT WITH CHECK (
+    CREATE POLICY enrollment_items_insert_own ON enrollment.enrollment_items FOR INSERT WITH CHECK (
       enrollment_id IN (
-        SELECT e.id FROM public.enrollments e
-        JOIN public.students s ON s.id = e.student_id
+        SELECT e.id FROM enrollment.enrollments e
+        JOIN academics.students s ON s.id = e.student_id
         WHERE s.user_id = auth.uid()
       )
     );
@@ -229,8 +229,8 @@ END; $$;
 -- grades
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='grades' AND policyname='grades_select_own') THEN
-    CREATE POLICY grades_select_own ON public.grades FOR SELECT USING (
-      student_id IN (SELECT id FROM public.students WHERE user_id = auth.uid())
+    CREATE POLICY grades_select_own ON academics.grades FOR SELECT USING (
+      student_id IN (SELECT id FROM academics.students WHERE user_id = auth.uid())
     );
   END IF;
 END; $$;
@@ -238,20 +238,20 @@ END; $$;
 -- documents
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='documents' AND policyname='documents_select_own') THEN
-    CREATE POLICY documents_select_own ON public.documents FOR SELECT USING (profile_id = auth.uid());
+    CREATE POLICY documents_select_own ON academics.documents FOR SELECT USING (profile_id = auth.uid());
   END IF;
 END; $$;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='documents' AND policyname='documents_insert_own') THEN
-    CREATE POLICY documents_insert_own ON public.documents FOR INSERT WITH CHECK (profile_id = auth.uid());
+    CREATE POLICY documents_insert_own ON academics.documents FOR INSERT WITH CHECK (profile_id = auth.uid());
   END IF;
 END; $$;
 
 -- notifications
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='notifications' AND policyname='notifications_select_own') THEN
-    CREATE POLICY notifications_select_own ON public.notifications FOR SELECT USING (profile_id = auth.uid());
+    CREATE POLICY notifications_select_own ON academics.notifications FOR SELECT USING (profile_id = auth.uid());
   END IF;
 END; $$;
 
@@ -315,7 +315,7 @@ BEGIN
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM public.enrollments
+    SELECT 1 FROM enrollment.enrollments
     WHERE student_id = p_student_id
       AND school_year = p_school_year
       AND term = p_term
@@ -327,14 +327,14 @@ BEGIN
   END IF;
 
   PERFORM id
-  FROM public.subject_offerings
+  FROM enrollment.subject_offerings
   WHERE id = ANY(p_offering_ids)
   ORDER BY id
   FOR UPDATE;
 
   FOR v_offering IN
     SELECT id, slots_taken, slots_total
-    FROM public.subject_offerings
+    FROM enrollment.subject_offerings
     WHERE id = ANY(p_offering_ids)
   LOOP
     IF v_offering.slots_taken >= v_offering.slots_total THEN
@@ -344,23 +344,23 @@ BEGIN
     END IF;
   END LOOP;
 
-  INSERT INTO public.enrollments (student_id, school_year, term, status, total_units)
+  INSERT INTO enrollment.enrollments (student_id, school_year, term, status, total_units)
   VALUES (
     p_student_id, p_school_year, p_term, 'submitted',
     (
       SELECT COALESCE(SUM(s.units), 0)
-      FROM public.subject_offerings so
-      JOIN public.subjects s ON s.id = so.subject_id
+      FROM enrollment.subject_offerings so
+      JOIN academics.subjects s ON s.id = so.subject_id
       WHERE so.id = ANY(p_offering_ids)
     )
   )
   RETURNING id INTO v_enrollment_id;
 
   FOREACH v_offering_id IN ARRAY p_offering_ids LOOP
-    INSERT INTO public.enrollment_items (enrollment_id, offering_id)
+    INSERT INTO enrollment.enrollment_items (enrollment_id, offering_id)
     VALUES (v_enrollment_id, v_offering_id);
 
-    UPDATE public.subject_offerings
+    UPDATE enrollment.subject_offerings
     SET slots_taken = slots_taken + 1
     WHERE id = v_offering_id;
   END LOOP;

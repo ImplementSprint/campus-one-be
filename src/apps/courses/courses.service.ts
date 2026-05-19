@@ -4,7 +4,8 @@ import { supabase } from '../../libs/database/supabase';
 @Injectable()
 export class CoursesService {
   async getCourses(userId: string) {
-    const { data: enrollments, error } = await supabase
+    const db = supabase.schema('academics');
+    const { data: enrollments, error } = await db
       .from('class_enrollments')
       .select(`id, class_assignments!inner(id, section, schedule, room, subjects!inner(code, name, units))`)
       .eq('student_id', userId)

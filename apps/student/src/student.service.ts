@@ -32,7 +32,7 @@ export class StudentService {
    * Returns total, active, inactive, and pending student counts.
    */
   async getStats(): Promise<IStudentStats> {
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseClient('student');
 
     const [total, active, inactive, pending] = await Promise.all([
       supabase.from(TABLE_STUDENTS).select('*', { count: 'exact', head: true }),
@@ -56,7 +56,8 @@ export class StudentService {
    * Returns all students joined with their applicant profile.
    */
   async findAll(): Promise<IStudentWithProfile[]> {
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseClient('student');
+    const applicationDb = (supabase as any).schema('application');
 
     const { data, error } = await supabase
       .from(TABLE_STUDENTS)
@@ -68,18 +69,6 @@ export class StudentService {
         enrollment_status,
         enrolled_at,
         password_hash,
-        ${TABLE_PROFILES} (
-          full_name,
-          first_name,
-          last_name,
-          middle_name,
-          birthdate,
-          mobile_number,
-          address,
-          school_level,
-          applicant_type,
-          program
-        )
       `)
       .order('enrolled_at', { ascending: false });
 
@@ -88,7 +77,22 @@ export class StudentService {
       throw new InternalServerErrorException(error.message);
     }
 
-    return (data ?? []) as unknown as IStudentWithProfile[];
+    const students = (data ?? []) as unknown as IStudentRecord[];
+    const applicantIds = [...new Set(students.map((student) => student.applicant_id).filter(Boolean))];
+
+    const { data: profiles } = applicantIds.length
+      ? await applicationDb
+          .from(TABLE_PROFILES)
+          .select('id, full_name, first_name, last_name, middle_name, birthdate, mobile_number, address, school_level, applicant_type, program')
+          .in('id', applicantIds)
+      : { data: [] };
+
+    const profileMap = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]));
+
+    return students.map((student) => ({
+      ...student,
+      applicant_profiles: profileMap.get(student.applicant_id) ?? null,
+    })) as IStudentWithProfile[];
   }
 
   // ─── Get One Student ───────────────────────────────────────────────────────
@@ -98,14 +102,12 @@ export class StudentService {
    * Returns a single student with their full applicant profile.
    */
   async findOne(id: string): Promise<IStudentWithProfile> {
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseClient('student');
+    const applicationDb = (supabase as any).schema('application');
 
     const { data, error } = await supabase
       .from(TABLE_STUDENTS)
-      .select(`
-        *,
-        ${TABLE_PROFILES} (*)
-      `)
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -113,7 +115,16 @@ export class StudentService {
       throw new NotFoundException(`Student not found: ${id}`);
     }
 
-    return data as IStudentWithProfile;
+    const { data: profile } = await applicationDb
+      .from(TABLE_PROFILES)
+      .select('id, full_name, first_name, last_name, middle_name, birthdate, mobile_number, address, school_level, applicant_type, program')
+      .eq('id', data.applicant_id)
+      .maybeSingle();
+
+    return {
+      ...data,
+      applicant_profiles: profile ?? null,
+    } as IStudentWithProfile;
   }
 
   // ─── Update Status ─────────────────────────────────────────────────────────
@@ -123,7 +134,7 @@ export class StudentService {
    * Activates or deactivates a student account.
    */
   async updateStatus(id: string, dto: UpdateStudentStatusDto): Promise<IStudentRecord> {
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseClient('student');
 
     const { data, error } = await supabase
       .from(TABLE_STUDENTS)
@@ -148,7 +159,7 @@ export class StudentService {
    * Updates basic student account fields (email, student_number).
    */
   async updateInfo(id: string, dto: UpdateStudentInfoDto): Promise<IStudentRecord> {
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseClient('student');
 
     const { data, error } = await supabase
       .from(TABLE_STUDENTS)
