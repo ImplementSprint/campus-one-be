@@ -4,7 +4,7 @@ import { supabase } from '../../libs/database/supabase';
 @Injectable()
 export class GradesService {
   async getGrades(userId: string) {
-    const applicationDb = supabase.schema('application');
+    const applicationDb = supabase.schema('applicant');
     const studentDb = supabase.schema('student');
 
     const { data: ap } = await applicationDb.from('applicant_profiles')
@@ -45,7 +45,7 @@ export class GradesService {
   }
 
   async getGraduation(userId: string) {
-    const applicationDb = supabase.schema('application');
+    const applicationDb = supabase.schema('applicant');
     const studentDb = supabase.schema('student');
 
     const { data: ap } = await applicationDb.from('applicant_profiles')

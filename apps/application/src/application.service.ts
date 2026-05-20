@@ -11,7 +11,7 @@ export class ApplicationService {
     (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY) as string,
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
-  private readonly db = this.supabase.schema('application');
+  private readonly db = this.supabase.schema('applicant');
 
   getHello(): string {
     return 'Application service is running.';

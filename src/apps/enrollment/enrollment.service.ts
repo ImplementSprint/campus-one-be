@@ -6,7 +6,8 @@ export class EnrollmentService {
   private readonly db = supabase.schema('enrollment');
 
   async getHistory(studentId: string) {
-    const { data: sa } = await this.db
+    const studentDb = supabase.schema('student');
+    const { data: sa } = await studentDb
       .from('student_accounts').select('id').eq('applicant_id', studentId).maybeSingle();
     if (!sa) return [];
 
@@ -31,12 +32,14 @@ export class EnrollmentService {
   async getOfferings(studentId?: string, program?: string, yearLevel?: string) {
     let studentProgram = program;
     let studentYearLevel = yearLevel ? parseInt(yearLevel) : undefined;
+    const studentDb = supabase.schema('student');
+    const applicantDb = supabase.schema('applicant');
 
     if (studentId && (!program || !yearLevel)) {
-      const { data: student } = await this.db
+      const { data: student } = await studentDb
         .from('student_accounts').select('applicant_id').eq('id', studentId).maybeSingle();
       if (student?.applicant_id) {
-        const { data: ps } = await this.db
+        const { data: ps } = await applicantDb
           .from('program_selections').select('college_program, school_level')
           .eq('applicant_id', student.applicant_id).maybeSingle();
         if (ps) {

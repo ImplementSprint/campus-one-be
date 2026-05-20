@@ -22,10 +22,10 @@ import {
  * The Supabase JS client targets `public` by default — we use .schema() to override.
  */
 const SCHEMA = 'alumni';
-const TABLE_REG_LOGS    = 'reg_activity_logs';  // alumni.reg_activity_logs
-const TABLE_RECORDS     = 'record_requests';      // alumni.record_requests
+const TABLE_REG_LOGS    = 'alumni_reg_activity_logs';  // alumni.alumni_reg_activity_logs
+const TABLE_RECORDS     = 'alumni_record_requests';      // alumni.alumni_record_requests
 const TABLE_CARDS       = 'card_applications';    // alumni.card_applications
-const TABLE_ACCOUNTS    = 'accounts';             // alumni.accounts
+const TABLE_ACCOUNTS    = 'alumni';             // alumni.alumni
 
 /** Fee schedule per document type (in PHP) */
 const FEE_MAP: Record<DocumentType, number> = {

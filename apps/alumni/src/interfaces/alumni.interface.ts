@@ -10,7 +10,7 @@ export enum PaymentStatus {
   PAID = 'paid',
 }
 
-/** Mirrors alumni.reg_activity_logs */
+/** Mirrors alumni.alumni_reg_activity_logs */
 export interface IAlumni {
   log_id: string;
   created_at: Date;
@@ -29,7 +29,7 @@ export interface IAlumni {
   proof_reference?: string;
 }
 
-/** Mirrors alumni.record_requests */
+/** Mirrors alumni.alumni_record_requests */
 export interface IAlumniRecordRequest {
   log_id: string;
   created_at: Date;
@@ -59,7 +59,7 @@ export interface IAlumniCardApplication {
   payment_status: PaymentStatus;
 }
 
-/** Mirrors alumni.accounts */
+/** Mirrors alumni.alumni */
 export interface IAlumniAccount {
   id?: string;
   email: string;

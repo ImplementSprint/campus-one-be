@@ -4,7 +4,7 @@ import { supabase } from '../../libs/database/supabase';
 @Injectable()
 export class ProfileService {
   async getProfile(userId: string) {
-    const applicationDb = supabase.schema('application');
+    const applicationDb = supabase.schema('applicant');
     const studentDb = supabase.schema('student');
     const alumniDb = supabase.schema('alumni');
     const facultyDb = supabase.schema('faculty');
@@ -16,7 +16,7 @@ export class ProfileService {
       applicationDb.from('program_selections').select('*').eq('applicant_id', userId).maybeSingle(),
       applicationDb.from('alumni_relatives').select('*').eq('applicant_id', userId),
       studentDb.from('student_accounts').select('id, student_number, applicant_id, email, password_hash, is_active, created_at').or(`id.eq.${userId},applicant_id.eq.${userId}`).maybeSingle(),
-      alumniDb.from('accounts').select('*').or(`id.eq.${userId}`).maybeSingle(),
+      alumniDb.from('alumni').select('*').or(`id.eq.${userId}`).maybeSingle(),
       facultyDb.from('professor_users').select('*').or(`id.eq.${userId}`).maybeSingle(),
     ]);
 
@@ -45,7 +45,7 @@ export class ProfileService {
   }
 
   async updateProfile(userId: string, body: any) {
-    const db = supabase.schema('application');
+    const db = supabase.schema('applicant');
     const { first_name, last_name, middle_name, mobile_number, address } = body;
     const full_name = `${first_name} ${middle_name} ${last_name}`.replace(/\s+/g, ' ').trim();
     const { data, error } = await db

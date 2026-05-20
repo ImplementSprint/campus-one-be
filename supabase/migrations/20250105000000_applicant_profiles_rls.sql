@@ -5,12 +5,12 @@
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies
-    WHERE schemaname = 'application'
+    WHERE schemaname = 'applicant'
       AND tablename = 'applicant_profiles'
       AND policyname = 'own_profile_select_by_email'
   ) THEN
     CREATE POLICY own_profile_select_by_email
-      ON application.applicant_profiles
+      ON applicant.applicant_profiles
       FOR SELECT
       TO authenticated
       USING (

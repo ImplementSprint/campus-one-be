@@ -34,7 +34,7 @@ export class AlumniController {
 
   /**
    * POST /api/v1/alumni/register
-   * Registers an alumnus. Writes to alumni.reg_activity_logs then alumni.accounts.
+  * Registers an alumnus. Writes to alumni.alumni_reg_activity_logs then alumni.
    * Event fired: alumni.registration.submitted.v1
    */
   @Post('register')
@@ -75,7 +75,7 @@ export class AlumniController {
 
   /**
    * POST /api/v1/alumni/card-request
-   * Submits an ID card application. Writes to alumni.card_applications.
+  * Submits an ID card application. Writes to alumni.card_applications.
    */
   @Post('card-request')
   @HttpCode(HttpStatus.CREATED)

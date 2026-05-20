@@ -12,7 +12,7 @@ export const StudentManifest = {
     'Manage student accounts, enrollment status, activation/deactivation, and academic profile data.',
   routes: ['/api/v1/student'],
   requiredServices: ['platform'],
-  dbSchema: 'academics',
+  dbSchema: 'academic',
   featureFlags: [
     'student.directory',          // Search and view all active student profiles
     'student.enrollment_status',  // View and update enrollment status (active/inactive)

@@ -57,7 +57,7 @@ export class StudentService {
    */
   async findAll(): Promise<IStudentWithProfile[]> {
     const supabase = getSupabaseClient('student');
-    const applicationDb = (supabase as any).schema('application');
+    const applicationDb = (supabase as any).schema('applicant');
 
     const { data, error } = await supabase
       .from(TABLE_STUDENTS)
@@ -103,7 +103,7 @@ export class StudentService {
    */
   async findOne(id: string): Promise<IStudentWithProfile> {
     const supabase = getSupabaseClient('student');
-    const applicationDb = (supabase as any).schema('application');
+    const applicationDb = (supabase as any).schema('applicant');
 
     const { data, error } = await supabase
       .from(TABLE_STUDENTS)

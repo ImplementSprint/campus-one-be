@@ -4,7 +4,7 @@ import { supabase } from '../../libs/database/supabase';
 @Injectable()
 export class DashboardService {
   async getDashboard(userId: string) {
-    const applicationDb = supabase.schema('application');
+    const applicationDb = supabase.schema('applicant');
     const studentDb = supabase.schema('student');
 
     const { data: ap } = await applicationDb

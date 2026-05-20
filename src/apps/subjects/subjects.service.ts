@@ -4,7 +4,7 @@ import { supabase } from '../../libs/database/supabase';
 @Injectable()
 export class SubjectsService {
   async getSubjects() {
-    const db = supabase.schema('academics');
+    const db = supabase.schema('academic');
     const { data, error } = await db
       .from('subjects')
       .select('id, code, name, description, units, semester, school_year, is_active')
@@ -23,7 +23,7 @@ export class SubjectsService {
   }
 
   async getUserInfo(userId: string) {
-    const db = supabase.schema('academics');
+    const db = supabase.schema('academic');
     const { data: ap } = await db
       .from('applicant_profiles')
       .select('first_name, last_name')
