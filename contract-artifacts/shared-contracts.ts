@@ -1,4 +1,7 @@
-﻿export type ApiHealth = {
+// Generated from campus-one-backend/libs/contracts/src/index.ts.
+// Do not edit by hand; run `npm run contracts:generate` in campus-one-backend.
+
+export type ApiHealth = {
   status: 'ok';
   service: string;
 };

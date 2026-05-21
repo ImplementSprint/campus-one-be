@@ -1,0 +1,6 @@
+{
+  "artifact": "contract-artifacts/shared-contracts.ts",
+  "formatVersion": 1,
+  "sha256": "b63170ac3c97951534bc675d731bd3de0da5626a78d80d83044378ac0474055c",
+  "source": "libs/contracts/src/index.ts"
+}

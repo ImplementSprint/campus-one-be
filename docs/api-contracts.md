@@ -43,7 +43,28 @@ Resolution order:
 
 ## Contract Sync Rule
 
-Backend owns `libs/contracts/src/index.ts`. Frontend and mobile may copy or generate frontend-safe types from this package, but must not import backend runtime code.
+Backend owns `libs/contracts/src/index.ts`.
+
+Generate the frontend/mobile-safe artifact with:
+
+```powershell
+npm run contracts:generate
+```
+
+This writes:
+
+```text
+contract-artifacts/shared-contracts.ts
+contract-artifacts/contracts-manifest.json
+```
+
+CI verifies the artifact with:
+
+```powershell
+npm run contracts:check
+```
+
+Frontend and mobile sync from `contract-artifacts/`; they must not import backend runtime code.
 
 Breaking contract changes require:
 
