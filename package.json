@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/apps/gateway/src/main.js",
     "build": "tsc -p tsconfig.json",
-    "test": "ts-node -r tsconfig-paths/register libs/tenants/src/tenant-resolution.middleware.test.ts",
+    "test": "ts-node -r tsconfig-paths/register libs/tenants/src/tenant-resolution.middleware.test.ts && ts-node -r tsconfig-paths/register libs/tenants/src/public-school.service.test.ts",
     "dev": "ts-node -r tsconfig-paths/register apps/gateway/src/main.ts",
     "start:dev": "npm run dev",
     "build:sources": "npm --workspace sources/main-be run build && npm --workspace sources/portal-be run build"
