@@ -25,3 +25,8 @@ The temporary `sources/` migration copies were removed after the consolidated ga
 ```powershell
 npm run verify
 ```
+
+## Deployment Setup
+
+- Runtime/deployment notes: `docs/deployment.md`
+- Secret setup runbook: `docs/secrets.md`
