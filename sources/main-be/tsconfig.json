@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2017",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "paths": {
+      "*": ["./*"],
+      "@libs/*": ["./src/libs/*"],
+      "@app/shared": ["./libs/shared/src/index.ts"],
+      "@app/shared/*": ["./libs/shared/src/*"]
+    }
+  },
+  "include": ["src/**/*", "apps/**/*", "libs/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

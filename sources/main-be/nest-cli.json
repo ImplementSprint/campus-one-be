@@ -1,0 +1,12 @@
+{
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "src",
+  "monorepo": true,
+  "root": "src",
+  "projects": {
+    "main":                     { "type": "application", "root": "src",                             "entryFile": "main", "sourceRoot": "src" },
+    "auth-service":             { "type": "application", "root": "apps/auth-service",               "entryFile": "main", "sourceRoot": "apps/auth-service/src" },
+    "institution-service":      { "type": "application", "root": "apps/institution-service",        "entryFile": "main", "sourceRoot": "apps/institution-service/src" },
+    "institution-data-service": { "type": "application", "root": "apps/institution-data-service",   "entryFile": "main", "sourceRoot": "apps/institution-data-service/src" }
+  }
+}

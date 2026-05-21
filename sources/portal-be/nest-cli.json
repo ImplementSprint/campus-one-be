@@ -1,0 +1,38 @@
+{
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "src",
+  "monorepo": true,
+  "root": "src",
+  "projects": {
+    "main": {
+      "type": "application",
+      "root": "src",
+      "entryFile": "main",
+      "sourceRoot": "src"
+    },
+    "enrollment": {
+      "type": "application",
+      "root": "apps/enrollment",
+      "entryFile": "main",
+      "sourceRoot": "apps/enrollment/src"
+    },
+    "application": {
+      "type": "application",
+      "root": "apps/application",
+      "entryFile": "main",
+      "sourceRoot": "apps/application/src"
+    },
+    "alumni": {
+      "type": "application",
+      "root": "apps/alumni",
+      "entryFile": "main",
+      "sourceRoot": "apps/alumni/src"
+    },
+    "student": {
+      "type": "application",
+      "root": "apps/student",
+      "entryFile": "main",
+      "sourceRoot": "apps/student/src"
+    }
+  }
+}

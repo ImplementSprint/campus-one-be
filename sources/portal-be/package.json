@@ -1,0 +1,42 @@
+{
+  "name": "campus-portal-backend",
+  "version": "1.0.0",
+  "description": "Campus Portal NestJS Monorepo Backend",
+  "scripts": {
+    "start": "node dist/main.js",
+    "dev": "concurrently --names \"main,alumni,student,enrollment,application\" --prefix-colors \"blue,green,yellow,magenta,cyan\" \"ts-node -r tsconfig-paths/register src/main.ts\" \"ts-node -r tsconfig-paths/register apps/alumni/src/main.ts\" \"ts-node -r tsconfig-paths/register apps/student/src/main.ts\" \"ts-node -r tsconfig-paths/register apps/enrollment/src/main.ts\" \"ts-node -r tsconfig-paths/register apps/application/src/main.ts\"",
+    "build": "tsc -p tsconfig.json",
+    "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
+    "dev:alumni": "ts-node -r tsconfig-paths/register apps/alumni/src/main.ts",
+    "dev:student": "ts-node -r tsconfig-paths/register apps/student/src/main.ts",
+    "dev:enrollment": "ts-node -r tsconfig-paths/register apps/enrollment/src/main.ts",
+    "dev:application": "ts-node -r tsconfig-paths/register apps/application/src/main.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.19",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.19",
+    "@nestjs/platform-express": "^11.1.19",
+    "@supabase/supabase-js": "^2.49.8",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.4",
+    "dotenv": "^16.0.0",
+    "file-type": "^22.0.1",
+    "kafkajs": "^2.2.4",
+    "reflect-metadata": "^0.1.13",
+    "rxjs": "^7.8.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.21",
+    "@nestjs/schematics": "^11.1.0",
+    "@types/express": "^4.17.0",
+    "@types/node": "^22.0.0",
+    "concurrently": "^9.2.1",
+    "tmp": "^0.2.5",
+    "ts-node": "^10.9.0",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "~5.9.2",
+    "webpack": "^5.106.2"
+  },
+  "private": true
+}

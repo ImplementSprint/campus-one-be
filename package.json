@@ -1,0 +1,12 @@
+﻿{
+  "name": "campus-one-backend",
+  "private": true,
+  "workspaces": [
+    "sources/*"
+  ],
+  "scripts": {
+    "build:main": "npm --workspace sources/main-be run build",
+    "build:portal": "npm --workspace sources/portal-be run build",
+    "build": "npm run build:main && npm run build:portal"
+  }
+}
