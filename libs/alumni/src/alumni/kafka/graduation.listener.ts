@@ -23,9 +23,14 @@ export class GraduationListener implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     try {
+      if (!process.env.KAFKA_BROKERS) {
+        this.logger.warn('[Kafka] KAFKA_BROKERS not set — GraduationListener disabled.');
+        return;
+      }
+
       const { Kafka } = await import('kafkajs');
 
-      const brokers = (process.env.KAFKA_BROKERS ?? 'localhost:9092').split(',');
+      const brokers = process.env.KAFKA_BROKERS.split(',');
 
       const kafka = new Kafka({
         clientId: 'alumni-service',

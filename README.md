@@ -4,9 +4,24 @@ Centralized backend repository for Campus One.
 
 ## Current Phase
 
-This repository has been created from the staging repository split. The original backend sources are preserved under:
+This repository is the active centralized NestJS backend for Campus One.
 
-- `sources/main-be` - platform/institution backend
-- `sources/portal-be` - internal portal backend
+## Layout
 
-The next backend phase is to consolidate these into one NestJS monorepo with `apps/gateway`, focused `libs/*`, and one canonical `supabase/` folder.
+- `apps/gateway` - primary HTTP API gateway.
+- `libs/auth` - platform and portal auth modules.
+- `libs/tenants` - institution profiles, school lookup, and tenant resolution.
+- `libs/academics` - student, enrollment, dashboard, profile, subjects, courses, and grades modules.
+- `libs/admissions` - applicant/application workflows.
+- `libs/alumni` - alumni workflows and optional Kafka graduation listener.
+- `libs/institution-data` - tenant-scoped generic resources.
+- `libs/contracts` - backend-owned shared DTO/type contracts.
+- `supabase` - canonical schema and migrations.
+
+The temporary `sources/` migration copies were removed after the consolidated gateway passed contract checks, tests, build, and the `/api/health` smoke check.
+
+## Verification
+
+```powershell
+npm run verify
+```

@@ -27,8 +27,5 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Check contract artifact
-        run: npm run contracts:check
-
-      - name: Build
-        run: npm run build
+      - name: Verify
+        run: npm run verify

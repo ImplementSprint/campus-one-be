@@ -9,9 +9,10 @@
     "test": "ts-node -r tsconfig-paths/register libs/tenants/src/tenant-resolution.middleware.test.ts && ts-node -r tsconfig-paths/register libs/tenants/src/public-school.service.test.ts",
     "contracts:generate": "node scripts/generate-contract-artifacts.mjs",
     "contracts:check": "node scripts/generate-contract-artifacts.mjs --check",
+    "smoke:gateway": "ts-node -r tsconfig-paths/register scripts/smoke-gateway.ts",
     "dev": "ts-node -r tsconfig-paths/register apps/gateway/src/main.ts",
     "start:dev": "npm run dev",
-    "build:sources": "npm --workspace sources/main-be run build && npm --workspace sources/portal-be run build"
+    "verify": "npm run contracts:check && npm test && npm run build && npm run smoke:gateway"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.19",

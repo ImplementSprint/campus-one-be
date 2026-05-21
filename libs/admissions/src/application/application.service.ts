@@ -7,8 +7,8 @@ type ServiceResponse<T> = { data: T | null; error: { message: string; code?: str
 @Injectable()
 export class ApplicationService {
   private readonly supabase = createClient(
-    process.env.SUPABASE_URL as string,
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY) as string,
+    process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder-key',
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
   private readonly db = this.supabase.schema('applicant');

@@ -31,8 +31,7 @@ The service role key belongs only in backend runtime environments.
 
 ```powershell
 npm ci
-npm test
-npm run build
+npm run verify
 npm start
 ```
 
