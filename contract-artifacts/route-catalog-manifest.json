@@ -1,24 +1,31 @@
 {
   "artifact": "contract-artifacts/route-catalog.json",
   "formatVersion": 1,
-  "routeCount": 78,
-  "sha256": "c754c113e6b671454b095d45d302ba127482f3eebb3c1043f5a1b4bc0764d975",
+  "routeCount": 145,
+  "sha256": "091bd8461e8397bfb86fe52bba7ef2f3e370eb0688d13a8c69efa43c85e7faff",
   "sources": [
     "apps/gateway/src/app.controller.ts",
     "libs/academics/src/courses/courses.controller.ts",
     "libs/academics/src/dashboard/dashboard.controller.ts",
     "libs/academics/src/enrollment/enrollment.controller.ts",
     "libs/academics/src/grades/grades.controller.ts",
+    "libs/academics/src/professor/professor.controller.ts",
     "libs/academics/src/profile/profile.controller.ts",
     "libs/academics/src/student/student.controller.ts",
     "libs/academics/src/subjects/subjects.controller.ts",
     "libs/admissions/src/application/application.controller.ts",
     "libs/alumni/src/alumni/alumni.controller.ts",
+    "libs/audit/src/audit.controller.ts",
     "libs/auth/src/platform-auth/auth.controller.ts",
     "libs/auth/src/portal-auth/auth.controller.ts",
+    "libs/billing/src/billing.controller.ts",
     "libs/institution-data/src/institution-data.controller.ts",
+    "libs/notifications/src/notifications.controller.ts",
+    "libs/school-admin/src/school-admin.controller.ts",
     "libs/tenants/src/institution-profile/institution.controller.ts",
+    "libs/tenants/src/platform-school-onboarding.controller.ts",
     "libs/tenants/src/platform-school.controller.ts",
-    "libs/tenants/src/public-school.controller.ts"
+    "libs/tenants/src/public-school.controller.ts",
+    "libs/tenants/src/tenant-current.controller.ts"
   ]
 }
