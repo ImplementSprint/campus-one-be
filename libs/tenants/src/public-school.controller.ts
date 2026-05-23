@@ -1,7 +1,9 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Public } from '../../auth/src/platform-auth/public.decorator';
 import { PublicSchoolService } from './public-school.service';
 
 @Controller('schools')
+@Public()
 export class PublicSchoolController {
   constructor(private readonly publicSchoolService: PublicSchoolService) {}
 

@@ -1,5 +1,6 @@
 ﻿import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
+import { DatabaseHealthService } from './database-health.service';
 import { AuthModule as PlatformAuthModule } from '../../../libs/auth/src/platform-auth/auth.module';
 import { TenantsModule } from '../../../libs/tenants/src/tenants.module';
 import { InstitutionDataModule } from '../../../libs/institution-data/src/institution-data.module';
@@ -29,5 +30,6 @@ import { AlumniModule } from '../../../libs/alumni/src/alumni/alumni.module';
     AlumniModule,
   ],
   controllers: [AppController],
+  providers: [DatabaseHealthService],
 })
 export class AppModule {}

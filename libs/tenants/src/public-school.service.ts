@@ -1,13 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { supabaseAdmin } from '@campus-one/database/supabase';
-
-type InstitutionProfileRow = {
-  id: string;
-  name: string;
-  target_subdomain: string;
-  school_type?: string | null;
-  status?: string | null;
-};
+import { TenantProfileRecord, TenantRegistryRepository } from './tenant-registry.repository';
+import { normalizeSchoolSlug } from './tenant-resolution.middleware';
 
 export type PublicSchool = {
   schoolId: string;
@@ -17,46 +10,32 @@ export type PublicSchool = {
   status?: string | null;
 };
 
-export function mapInstitutionProfileToPublicSchool(row: InstitutionProfileRow): PublicSchool {
+export function mapInstitutionProfileToPublicSchool(row: TenantProfileRecord): PublicSchool {
   return {
     schoolId: row.id,
-    schoolSlug: row.target_subdomain,
-    displayName: row.name,
-    schoolType: row.school_type,
+    schoolSlug: row.targetSubdomain,
+    displayName: row.name ?? '',
+    schoolType: row.schoolType,
     status: row.status,
   };
 }
 
 @Injectable()
 export class PublicSchoolService {
+  constructor(private readonly tenantRegistryRepository: TenantRegistryRepository) {}
+
   async searchSchools(search?: string): Promise<PublicSchool[]> {
-    let query = supabaseAdmin
-      .from('institution_profiles')
-      .select('id, name, target_subdomain, school_type, status')
-      .eq('status', 'approved')
-      .order('name', { ascending: true })
-      .limit(25);
+    const data = await this.tenantRegistryRepository.searchApprovedInstitutions(search);
 
-    if (search?.trim()) {
-      const term = search.trim().replace(/[%_]/g, '');
-      query = query.or(`name.ilike.%${term}%,target_subdomain.ilike.%${term}%`);
-    }
-
-    const { data, error } = await query;
-    if (error) throw new Error(error.message);
-
-    return (data ?? []).map(mapInstitutionProfileToPublicSchool);
+    return data.map(mapInstitutionProfileToPublicSchool);
   }
 
   async getSchoolBySlug(slug: string): Promise<PublicSchool> {
-    const { data, error } = await supabaseAdmin
-      .from('institution_profiles')
-      .select('id, name, target_subdomain, school_type, status')
-      .eq('target_subdomain', slug)
-      .eq('status', 'approved')
-      .maybeSingle();
+    const normalizedSlug = normalizeSchoolSlug(slug);
+    if (!normalizedSlug) throw new NotFoundException('School not found');
 
-    if (error) throw new Error(error.message);
+    const data = await this.tenantRegistryRepository.findApprovedInstitutionBySlug(normalizedSlug);
+
     if (!data) throw new NotFoundException('School not found');
 
     return mapInstitutionProfileToPublicSchool(data);

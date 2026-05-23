@@ -2,14 +2,16 @@ import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../apps/gateway/src/app.module';
+import { validateRuntimeConfig } from '../libs/config/src/runtime-config';
 
 async function runSmoke() {
+  const runtimeConfig = validateRuntimeConfig();
   console.log('Starting gateway smoke...');
   const app = await NestFactory.create(AppModule, { abortOnError: false, logger: false });
   console.log('Gateway app created.');
 
   app.enableCors({
-    origin: process.env.FRONTEND_ORIGIN?.split(',') ?? true,
+    origin: runtimeConfig.allowedOrigins,
     credentials: true,
   });
   app.setGlobalPrefix('api');

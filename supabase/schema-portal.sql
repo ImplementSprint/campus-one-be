@@ -1,3 +1,6 @@
+-- REFERENCE ONLY: legacy portal schema snapshot.
+-- Do not use this file as an active migration source.
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   role text not null check (role in ('student', 'applicant', 'admin')),

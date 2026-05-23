@@ -1,4 +1,4 @@
-﻿import {
+import {
   Body,
   Controller,
   Get,
@@ -8,6 +8,8 @@
   Patch,
   Post,
 } from '@nestjs/common';
+import { Public } from '../../../auth/src/platform-auth/public.decorator';
+import { RequirePermissions } from '../../../auth/src/platform-auth/permissions.decorator';
 import { AlumniService } from './alumni.service';
 import { RegisterAlumniDto } from './dto/register-alumni.dto';
 import { RequestRecordDto } from './dto/request-record.dto';
@@ -18,10 +20,8 @@ import { AlumniManifest } from './alumni.manifest';
 export class AlumniController {
   constructor(private readonly alumniService: AlumniService) {}
 
-  /**
-   * GET /api/v1/alumni/health
-   */
   @Get('health')
+  @Public()
   health(): { status: string; service: string; version: string } {
     return {
       status: 'ok',
@@ -30,93 +30,59 @@ export class AlumniController {
     };
   }
 
-  // â”€â”€â”€ Alumni User endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  /**
-   * POST /api/v1/alumni/register
-  * Registers an alumnus. Writes to alumni.alumni_reg_activity_logs then alumni.
-   * Event fired: alumni.registration.submitted.v1
-   */
   @Post('register')
+  @RequirePermissions('alumni.self.write')
   @HttpCode(HttpStatus.CREATED)
   async register(@Body() dto: RegisterAlumniDto) {
     return this.alumniService.registerAlumni(dto);
   }
 
-  /**
-   * GET /api/v1/alumni/profile/:actor_uuid
-   * Returns the most recent registration log entry for the given alumnus.
-   */
   @Get('profile/:actor_uuid')
+  @RequirePermissions('alumni.self.write')
   async getProfile(@Param('actor_uuid') actor_uuid: string) {
     return this.alumniService.getAlumniProfile(actor_uuid);
   }
 
-  /**
-   * POST /api/v1/alumni/records/request
-   * Submits a document request (TOR, Diploma, Good Moral, Certificate).
-   * Fee is auto-calculated server-side; payment starts as pending.
-   * Event fired: alumni.record.requested.v1
-   */
   @Post('records/request')
+  @RequirePermissions('alumni.self.write')
   @HttpCode(HttpStatus.CREATED)
   async requestRecord(@Body() dto: RequestRecordDto) {
     return this.alumniService.requestRecord(dto);
   }
 
-  /**
-   * GET /api/v1/alumni/records/:actor_uuid
-   * Returns all document requests for an alumnus, ordered newest first.
-   */
   @Get('records/:actor_uuid')
+  @RequirePermissions('alumni.self.write')
   async getRecords(@Param('actor_uuid') actor_uuid: string) {
     return this.alumniService.getRecordRequests(actor_uuid);
   }
 
-  /**
-   * POST /api/v1/alumni/card-request
-  * Submits an ID card application. Writes to alumni.card_applications.
-   */
   @Post('card-request')
+  @RequirePermissions('alumni.self.write')
   @HttpCode(HttpStatus.CREATED)
   async applyForCard(@Body() dto: CardApplicationDto) {
     return this.alumniService.applyForCard(dto);
   }
 
-  /**
-   * GET /api/v1/alumni/card-request/:actor_uuid
-   * Returns all card applications for an alumnus.
-   */
   @Get('card-request/:actor_uuid')
+  @RequirePermissions('alumni.self.write')
   async getCardApplications(@Param('actor_uuid') actor_uuid: string) {
     return this.alumniService.getCardApplications(actor_uuid);
   }
 
-  // â”€â”€â”€ Admin endpoints (all records, not scoped to one user) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  /**
-   * GET /api/v1/alumni/admin/registry
-   * Returns all alumni registration logs. Used by Alumni Admin dashboard.
-   */
   @Get('admin/registry')
+  @RequirePermissions('alumni.read')
   async adminRegistry() {
     return this.alumniService.getAllRegistrations();
   }
 
-  /**
-   * GET /api/v1/alumni/admin/requests
-   * Returns all document requests. Used by Alumni Admin dashboard.
-   */
   @Get('admin/requests')
+  @RequirePermissions('alumni.read')
   async adminRequests() {
     return this.alumniService.getAllRecordRequests();
   }
 
-  /**
-   * PATCH /api/v1/alumni/admin/requests/:log_id
-   * Updates the status_code of a document request (e.g. admin advances it).
-   */
   @Patch('admin/requests/:log_id')
+  @RequirePermissions('alumni.write')
   async adminUpdateRequest(
     @Param('log_id') log_id: string,
     @Body() body: { status_code: number },
@@ -124,5 +90,3 @@ export class AlumniController {
     return this.alumniService.updateRecordStatus(log_id, body.status_code);
   }
 }
-
-

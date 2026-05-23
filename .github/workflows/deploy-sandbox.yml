@@ -1,0 +1,87 @@
+name: Deploy Backend Sandbox
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "apps/**"
+      - "libs/**"
+      - "prisma/**"
+      - "scripts/**"
+      - "src/**"
+      - "Dockerfile"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - ".github/workflows/deploy-sandbox.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'campus-one-sandbox-260522' }}
+  GCP_REGION: ${{ vars.GCP_REGION || 'asia-southeast1' }}
+  GKE_CLUSTER_NAME: ${{ vars.GKE_CLUSTER_NAME || 'campus-one-sandbox-gke' }}
+  GKE_NAMESPACE: ${{ vars.GKE_NAMESPACE || 'campus-one-sandbox' }}
+  ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.ARTIFACT_REGISTRY_REPOSITORY || 'campus-one-sandbox-artifacts' }}
+  IMAGE_NAME: campus-one-api
+
+jobs:
+  verify-build-deploy:
+    name: Verify, build image, and update sandbox Deployment
+    runs-on: ubuntu-latest
+    environment: sandbox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push image with Cloud Build
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          gcloud builds submit \
+            --project="${GCP_PROJECT_ID}" \
+            --tag="${IMAGE}" \
+            .
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER_NAME }}
+          location: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Update backend image
+        run: |
+          kubectl -n "${GKE_NAMESPACE}" set image "deployment/${IMAGE_NAME}" "${IMAGE_NAME}=${IMAGE}"
+          REPLICAS="$(kubectl -n "${GKE_NAMESPACE}" get deployment "${IMAGE_NAME}" -o jsonpath='{.spec.replicas}')"
+          if [ "${REPLICAS}" = "0" ]; then
+            echo "Backend image updated, but ${IMAGE_NAME} is scaled to 0. Skipping rollout wait until runtime secrets are available."
+          else
+            kubectl -n "${GKE_NAMESPACE}" rollout status "deployment/${IMAGE_NAME}" --timeout=600s
+          fi

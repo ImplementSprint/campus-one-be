@@ -1,0 +1,10 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma/registrar"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Registrar domain models will be added during the service migration.

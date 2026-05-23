@@ -24,8 +24,5 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Test
-        run: npm test
-
       - name: Verify
         run: npm run verify

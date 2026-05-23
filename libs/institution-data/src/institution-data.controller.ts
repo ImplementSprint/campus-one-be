@@ -1,4 +1,5 @@
-﻿import { Controller, Get, Post, Patch, Delete, Param, Body, Query, Headers, HttpCode, HttpStatus, HttpException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, Headers, HttpCode, HttpStatus, HttpException } from '@nestjs/common';
+import { RequirePermissions } from '../../auth/src/platform-auth/permissions.decorator';
 import { InstitutionDataService } from './institution-data.service';
 
 @Controller()
@@ -11,9 +12,8 @@ export class InstitutionDataController {
     return id;
   }
 
-  // â”€â”€â”€ Resources â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
   @Get('resources/:resource')
+  @RequirePermissions('tenant.settings.read')
   async list(
     @Param('resource') resource: string,
     @Query('search') search: string,
@@ -24,6 +24,7 @@ export class InstitutionDataController {
   }
 
   @Post('resources/:resource')
+  @RequirePermissions('tenant.settings.write')
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Param('resource') resource: string,
@@ -35,6 +36,7 @@ export class InstitutionDataController {
   }
 
   @Patch('resources/:resource/:id')
+  @RequirePermissions('tenant.settings.write')
   async update(
     @Param('resource') resource: string,
     @Param('id') id: string,
@@ -46,6 +48,7 @@ export class InstitutionDataController {
   }
 
   @Delete('resources/:resource/:id')
+  @RequirePermissions('tenant.settings.write')
   async remove(
     @Param('resource') resource: string,
     @Param('id') id: string,
@@ -55,31 +58,29 @@ export class InstitutionDataController {
     catch (e: any) { throw new HttpException(e.message, e.status ?? HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
-  // â”€â”€â”€ Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
   @Patch('notifications/read-all')
+  @RequirePermissions('notifications.self.read')
   async markAllNotificationsRead(@Headers() headers: Record<string, string>) {
     try { return await this.svc.markAllNotificationsRead(this.uid(headers)); }
     catch (e: any) { throw new HttpException(e.message, e.status ?? HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
-  // â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
   @Get('dashboard')
+  @RequirePermissions('tenant.bootstrap.read')
   async dashboard(@Headers() headers: Record<string, string>) {
     try { return await this.svc.dashboard(this.uid(headers)); }
     catch (e: any) { throw new HttpException(e.message, e.status ?? HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
-  // â”€â”€â”€ School Profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
   @Get('school/profile')
+  @RequirePermissions('tenant.settings.read')
   async getProfile(@Headers() headers: Record<string, string>) {
     try { return await this.svc.getProfile(this.uid(headers)); }
     catch (e: any) { throw new HttpException(e.message, e.status ?? HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
   @Patch('school/profile')
+  @RequirePermissions('tenant.settings.write')
   async updateProfile(
     @Body() body: Record<string, unknown>,
     @Headers() headers: Record<string, string>,
@@ -88,5 +89,3 @@ export class InstitutionDataController {
     catch (e: any) { throw new HttpException(e.message, e.status ?? HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 }
-
-
