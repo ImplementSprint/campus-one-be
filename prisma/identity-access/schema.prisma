@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma/identity-access"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model TenantUserMembership {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  institutionId String   @map("institution_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  email         String
+  role          String
+  status        String   @default("active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([institutionId, userId], map: "tenant_user_memberships_unique_user_school")
+  @@map("tenant_user_memberships")
+}
+
+model PortalAccount {
+  id        String   @id @db.Uuid
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("portal_accounts")
+}
+
+model AdminUser {
+  institutionId String   @map("institution_id") @db.Uuid
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  name          String
+  role          String?  @default("admin")
+  isActive      Boolean? @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastLogin     DateTime? @map("last_login") @db.Timestamptz(6)
+  createdBy     String?  @map("created_by") @db.Uuid
+
+  @@map("admin_users")
+}
+
+model StudentAccount {
+  institutionId    String    @map("institution_id") @db.Uuid
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicantId      String    @unique @map("applicant_id") @db.Uuid
+  studentNumber    String    @unique @map("student_number")
+  email            String    @unique
+  passwordHash     String    @map("password_hash")
+  enrollmentStatus String?   @default("active") @map("enrollment_status")
+  isActive         Boolean?  @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  enrolledAt       DateTime? @map("enrolled_at") @db.Timestamptz(6)
+  lastLogin        DateTime? @map("last_login") @db.Timestamptz(6)
+
+  @@map("student_accounts")
+}
+
+model ProfessorUser {
+  institutionId String    @map("institution_id") @db.Uuid
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  fullName      String    @map("full_name")
+  department    String?
+  employeeId    String?   @unique @map("employee_id")
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("professor_users")
+}
+
+model AlumniAccount {
+  institutionId  String    @map("institution_id") @db.Uuid
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email          String    @unique
+  passwordHash   String    @map("password_hash")
+  name           String
+  studentNumber  String?   @unique @map("student_number")
+  graduationYear Int?      @map("graduation_year")
+  program        String?
+  isActive       Boolean?  @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastLogin      DateTime? @map("last_login") @db.Timestamptz(6)
+
+  @@map("alumni")
+}

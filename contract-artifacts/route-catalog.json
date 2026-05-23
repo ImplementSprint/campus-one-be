@@ -1,0 +1,987 @@
+{
+  "formatVersion": 1,
+  "generatedFrom": [
+    "apps/**/*.controller.ts",
+    "libs/**/*.controller.ts"
+  ],
+  "globalPrefix": "/api",
+  "routeCount": 78,
+  "routes": [
+    {
+      "method": "GET",
+      "route": "/api/alumni/admin/registry",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "adminRegistry",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.read"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/alumni/admin/requests",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "adminRequests",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.read"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/alumni/admin/requests/:log_id",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "adminUpdateRequest",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.write"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/alumni/card-request",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "applyForCard",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.self.write"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/alumni/card-request/:actor_uuid",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "getCardApplications",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.self.write"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/alumni/health",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "health",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/alumni/profile/:actor_uuid",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "getProfile",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.self.write"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/alumni/records/:actor_uuid",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "getRecords",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.self.write"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/alumni/records/request",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "requestRecord",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.self.write"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/alumni/register",
+      "owner": "alumni",
+      "controller": "AlumniController",
+      "handler": "register",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "alumni.self.write"
+      ],
+      "source": "libs/alumni/src/alumni/alumni.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/application",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "getHello",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.read"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/application/academic-background",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "saveAcademicBackground",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.self.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/application/admin/applications",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "fetchAdminApplications",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.read"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/application/admin/applications/:applicationId",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "fetchAdminApplicationDetail",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.read"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/application/admin/applications/:applicationId/program-selection",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "updateAdminProgramSelection",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/application/admin/applications/:applicationId/status",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "updateAdminApplicationStatus",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/application/admin/stats",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "fetchAdminDashboardStats",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.read"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/application/alumni-relatives",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "saveAlumniRelatives",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.self.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/application/create-profile",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "createApplicantProfile",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/application/health",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "health",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/application/log-event",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "logAdmissionEvent",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/application/parent-information",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "saveParentInformation",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.self.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/application/profile",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "saveApplicantProfile",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.self.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/application/program-selection",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "saveProgramSelection",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.self.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/application/result/:applicantId",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "getApplicantAdmissionResult",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.self.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/application/status",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "fetchApplicationStatus",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/application/submit/:applicantId",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "submitApplication",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "admissions.self.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/application/track",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "trackApplication",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/application/upload-document",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "uploadApplicantDocument",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "files.self.write"
+      ],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/application/validate-access",
+      "owner": "admissions",
+      "controller": "ApplicationController",
+      "handler": "validateApplicationAccess",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/admissions/src/application/application.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/auth/login",
+      "owner": "identity-access",
+      "controller": "AuthController",
+      "handler": "login",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/auth/src/platform-auth/auth.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/auth/me",
+      "owner": "identity-access",
+      "controller": "AuthController",
+      "handler": "me",
+      "access": "authenticated",
+      "scope": "authenticated",
+      "permissions": [],
+      "source": "libs/auth/src/platform-auth/auth.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/auth/signin",
+      "owner": "identity-access",
+      "controller": "AuthController",
+      "handler": "signIn",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/auth/src/platform-auth/auth.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/auth/signin",
+      "owner": "identity-access",
+      "controller": "AuthController",
+      "handler": "signIn",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/auth/src/portal-auth/auth.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/auth/signout",
+      "owner": "identity-access",
+      "controller": "AuthController",
+      "handler": "signOut",
+      "access": "authenticated",
+      "scope": "authenticated",
+      "permissions": [],
+      "source": "libs/auth/src/platform-auth/auth.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/auth/signout",
+      "owner": "identity-access",
+      "controller": "AuthController",
+      "handler": "signOut",
+      "access": "authenticated",
+      "scope": "authenticated",
+      "permissions": [],
+      "source": "libs/auth/src/portal-auth/auth.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/auth/signup",
+      "owner": "identity-access",
+      "controller": "AuthController",
+      "handler": "signUp",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/auth/src/platform-auth/auth.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/courses/:userId",
+      "owner": "academics",
+      "controller": "CoursesController",
+      "handler": "getCourses",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "academics.read"
+      ],
+      "source": "libs/academics/src/courses/courses.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/dashboard",
+      "owner": "institution-data",
+      "controller": "InstitutionDataController",
+      "handler": "dashboard",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.bootstrap.read"
+      ],
+      "source": "libs/institution-data/src/institution-data.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/dashboard/:userId",
+      "owner": "academics",
+      "controller": "DashboardController",
+      "handler": "getDashboard",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.bootstrap.read"
+      ],
+      "source": "libs/academics/src/dashboard/dashboard.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/enrollment/history/:studentId",
+      "owner": "academics",
+      "controller": "EnrollmentController",
+      "handler": "getHistory",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "enrollment.read"
+      ],
+      "source": "libs/academics/src/enrollment/enrollment.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/enrollment/offerings",
+      "owner": "academics",
+      "controller": "EnrollmentController",
+      "handler": "getOfferings",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "academics.read"
+      ],
+      "source": "libs/academics/src/enrollment/enrollment.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/enrollment/status/:studentId",
+      "owner": "academics",
+      "controller": "EnrollmentController",
+      "handler": "getStatus",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "enrollment.read"
+      ],
+      "source": "libs/academics/src/enrollment/enrollment.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/enrollment/submit",
+      "owner": "academics",
+      "controller": "EnrollmentController",
+      "handler": "submit",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "enrollment.self.write"
+      ],
+      "source": "libs/academics/src/enrollment/enrollment.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/grades/:userId",
+      "owner": "academics",
+      "controller": "GradesController",
+      "handler": "getGrades",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "grades.self.read"
+      ],
+      "source": "libs/academics/src/grades/grades.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/grades/:userId/deficiencies",
+      "owner": "academics",
+      "controller": "GradesController",
+      "handler": "getDeficiencies",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "grades.self.read"
+      ],
+      "source": "libs/academics/src/grades/grades.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/grades/:userId/graduation",
+      "owner": "academics",
+      "controller": "GradesController",
+      "handler": "getGraduation",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "grades.self.read"
+      ],
+      "source": "libs/academics/src/grades/grades.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/health",
+      "owner": "gateway",
+      "controller": "AppController",
+      "handler": "health",
+      "access": "public",
+      "scope": "health",
+      "permissions": [],
+      "source": "apps/gateway/src/app.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/health/db",
+      "owner": "gateway",
+      "controller": "AppController",
+      "handler": "database",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "audit.read"
+      ],
+      "source": "apps/gateway/src/app.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/health/live",
+      "owner": "gateway",
+      "controller": "AppController",
+      "handler": "live",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "apps/gateway/src/app.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/institution/profile",
+      "owner": "tenant-registry",
+      "controller": "InstitutionController",
+      "handler": "getProfile",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.settings.read"
+      ],
+      "source": "libs/tenants/src/institution-profile/institution.controller.ts"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/institution/profile",
+      "owner": "tenant-registry",
+      "controller": "InstitutionController",
+      "handler": "updateProfile",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.settings.write"
+      ],
+      "source": "libs/tenants/src/institution-profile/institution.controller.ts"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/notifications/read-all",
+      "owner": "institution-data",
+      "controller": "InstitutionDataController",
+      "handler": "markAllNotificationsRead",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "notifications.self.read"
+      ],
+      "source": "libs/institution-data/src/institution-data.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/platform/schools",
+      "owner": "tenant-registry",
+      "controller": "PlatformSchoolController",
+      "handler": "listSchools",
+      "access": "permission",
+      "scope": "platform",
+      "permissions": [
+        "platform.schools.read"
+      ],
+      "source": "libs/tenants/src/platform-school.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/platform/schools/:id",
+      "owner": "tenant-registry",
+      "controller": "PlatformSchoolController",
+      "handler": "getSchool",
+      "access": "permission",
+      "scope": "platform",
+      "permissions": [
+        "platform.schools.read"
+      ],
+      "source": "libs/tenants/src/platform-school.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/platform/schools/:id/approve",
+      "owner": "tenant-registry",
+      "controller": "PlatformSchoolController",
+      "handler": "approveSchool",
+      "access": "permission",
+      "scope": "platform",
+      "permissions": [
+        "platform.schools.write"
+      ],
+      "source": "libs/tenants/src/platform-school.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/platform/schools/:id/reactivate",
+      "owner": "tenant-registry",
+      "controller": "PlatformSchoolController",
+      "handler": "reactivateSchool",
+      "access": "permission",
+      "scope": "platform",
+      "permissions": [
+        "platform.schools.write"
+      ],
+      "source": "libs/tenants/src/platform-school.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/platform/schools/:id/reject",
+      "owner": "tenant-registry",
+      "controller": "PlatformSchoolController",
+      "handler": "rejectSchool",
+      "access": "permission",
+      "scope": "platform",
+      "permissions": [
+        "platform.schools.write"
+      ],
+      "source": "libs/tenants/src/platform-school.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/platform/schools/:id/suspend",
+      "owner": "tenant-registry",
+      "controller": "PlatformSchoolController",
+      "handler": "suspendSchool",
+      "access": "permission",
+      "scope": "platform",
+      "permissions": [
+        "platform.schools.write"
+      ],
+      "source": "libs/tenants/src/platform-school.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/platform/schools/register",
+      "owner": "tenant-registry",
+      "controller": "PlatformSchoolController",
+      "handler": "registerSchool",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/tenants/src/platform-school.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/profile/:userId",
+      "owner": "academics",
+      "controller": "ProfileController",
+      "handler": "getProfile",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.bootstrap.read"
+      ],
+      "source": "libs/academics/src/profile/profile.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/profile/:userId",
+      "owner": "academics",
+      "controller": "ProfileController",
+      "handler": "updateProfile",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "users.write"
+      ],
+      "source": "libs/academics/src/profile/profile.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/resources/:resource",
+      "owner": "institution-data",
+      "controller": "InstitutionDataController",
+      "handler": "list",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.settings.read"
+      ],
+      "source": "libs/institution-data/src/institution-data.controller.ts"
+    },
+    {
+      "method": "POST",
+      "route": "/api/resources/:resource",
+      "owner": "institution-data",
+      "controller": "InstitutionDataController",
+      "handler": "create",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.settings.write"
+      ],
+      "source": "libs/institution-data/src/institution-data.controller.ts"
+    },
+    {
+      "method": "DELETE",
+      "route": "/api/resources/:resource/:id",
+      "owner": "institution-data",
+      "controller": "InstitutionDataController",
+      "handler": "remove",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.settings.write"
+      ],
+      "source": "libs/institution-data/src/institution-data.controller.ts"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/resources/:resource/:id",
+      "owner": "institution-data",
+      "controller": "InstitutionDataController",
+      "handler": "update",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.settings.write"
+      ],
+      "source": "libs/institution-data/src/institution-data.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/school/profile",
+      "owner": "institution-data",
+      "controller": "InstitutionDataController",
+      "handler": "getProfile",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.settings.read"
+      ],
+      "source": "libs/institution-data/src/institution-data.controller.ts"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/school/profile",
+      "owner": "institution-data",
+      "controller": "InstitutionDataController",
+      "handler": "updateProfile",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.settings.write"
+      ],
+      "source": "libs/institution-data/src/institution-data.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/schools",
+      "owner": "tenant-registry",
+      "controller": "PublicSchoolController",
+      "handler": "searchSchools",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/tenants/src/public-school.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/schools/:slug",
+      "owner": "tenant-registry",
+      "controller": "PublicSchoolController",
+      "handler": "getSchoolBySlug",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/tenants/src/public-school.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/subjects",
+      "owner": "academics",
+      "controller": "SubjectsController",
+      "handler": "getSubjects",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "academics.read"
+      ],
+      "source": "libs/academics/src/subjects/subjects.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/subjects/user/:userId",
+      "owner": "academics",
+      "controller": "SubjectsController",
+      "handler": "getUserInfo",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "tenant.bootstrap.read"
+      ],
+      "source": "libs/academics/src/subjects/subjects.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/student",
+      "owner": "academics",
+      "controller": "StudentController",
+      "handler": "findAll",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "students.read"
+      ],
+      "source": "libs/academics/src/student/student.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/student/:id",
+      "owner": "academics",
+      "controller": "StudentController",
+      "handler": "findOne",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "students.read"
+      ],
+      "source": "libs/academics/src/student/student.controller.ts"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/student/:id",
+      "owner": "academics",
+      "controller": "StudentController",
+      "handler": "updateInfo",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "students.write"
+      ],
+      "source": "libs/academics/src/student/student.controller.ts"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/v1/student/:id/status",
+      "owner": "academics",
+      "controller": "StudentController",
+      "handler": "updateStatus",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "students.write"
+      ],
+      "source": "libs/academics/src/student/student.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/student/health",
+      "owner": "academics",
+      "controller": "StudentController",
+      "handler": "health",
+      "access": "public",
+      "scope": "public",
+      "permissions": [],
+      "source": "libs/academics/src/student/student.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/student/stats",
+      "owner": "academics",
+      "controller": "StudentController",
+      "handler": "getStats",
+      "access": "permission",
+      "scope": "tenant",
+      "permissions": [
+        "students.read"
+      ],
+      "source": "libs/academics/src/student/student.controller.ts"
+    }
+  ]
+}

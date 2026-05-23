@@ -1,0 +1,10 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma/alumni"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Alumni domain models will be added during the service migration.

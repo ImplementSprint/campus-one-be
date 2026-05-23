@@ -1,8 +1,11 @@
-node_modules
+﻿node_modules
 dist
+src/generated
 .git
 .github
 coverage
 *.log
+npm-debug.log
 .env
 .env.*
+contract-artifacts/*.tmp

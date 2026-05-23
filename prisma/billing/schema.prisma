@@ -1,0 +1,10 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma/billing"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Billing domain models will be added during the service migration.

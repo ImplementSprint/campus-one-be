@@ -1,21 +1,32 @@
-FROM node:22-bookworm-slim AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package*.json ./
+
+COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM deps AS build
-COPY tsconfig.json nest-cli.json ./
-COPY apps ./apps
-COPY libs ./libs
-COPY scripts ./scripts
-RUN npm run build
-RUN npm prune --omit=dev
-
-FROM node:22-bookworm-slim AS runtime
-ENV NODE_ENV=production
+FROM node:22-alpine AS build
 WORKDIR /app
-COPY --from=build /app/package*.json ./
-COPY --from=build /app/node_modules ./node_modules
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:22-alpine AS prod-deps
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+FROM node:22-alpine AS runtime
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=4000
+
+COPY package.json package-lock.json ./
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/src/generated ./src/generated
+
 EXPOSE 4000
 CMD ["node", "dist/apps/gateway/src/main.js"]

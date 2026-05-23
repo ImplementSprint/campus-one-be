@@ -8,6 +8,8 @@
   Param,
   Patch,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../auth/src/platform-auth/permissions.decorator';
+import { Public } from '../../../auth/src/platform-auth/public.decorator';
 import { StudentService } from './student.service';
 import { UpdateStudentInfoDto, UpdateStudentStatusDto } from './dto/update-student.dto';
 
@@ -20,6 +22,7 @@ export class StudentController {
    * Health check endpoint â€” required by architecture plan.
    */
   @Get('health')
+  @Public()
   health() {
     return this.studentService.getHealth();
   }
@@ -30,6 +33,7 @@ export class StudentController {
    * Used by the Student Admin Dashboard overview cards.
    */
   @Get('stats')
+  @RequirePermissions('students.read')
   async getStats() {
     return this.studentService.getStats();
   }
@@ -40,6 +44,7 @@ export class StudentController {
    * Used by the Student Directory view.
    */
   @Get()
+  @RequirePermissions('students.read')
   async findAll() {
     return this.studentService.findAll();
   }
@@ -50,6 +55,7 @@ export class StudentController {
    * Used by the Student Detail view.
    */
   @Get(':id')
+  @RequirePermissions('students.read')
   async findOne(@Param('id') id: string) {
     this.assertStudentId(id);
 
@@ -97,6 +103,7 @@ export class StudentController {
    * Used by the Activate / Deactivate buttons in Student Detail.
    */
   @Patch(':id/status')
+  @RequirePermissions('students.write')
   @HttpCode(HttpStatus.OK)
   async updateStatus(
     @Param('id') id: string,
@@ -113,6 +120,7 @@ export class StudentController {
    * Updates basic student account info (email, student_number).
    */
   @Patch(':id')
+  @RequirePermissions('students.write')
   @HttpCode(HttpStatus.OK)
   async updateInfo(
     @Param('id') id: string,

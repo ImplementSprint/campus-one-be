@@ -1,4 +1,5 @@
 export * from './tenant-context';
+export * from './tenant-registry.repository';
 export * from './tenant-resolution.middleware';
 export * from './tenant-current.controller';
 export * from './tenants.module';

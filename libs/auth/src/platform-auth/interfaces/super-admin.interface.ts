@@ -1,12 +1,9 @@
-﻿// Account stored in portal_accounts â€” owned by this service (CAMPUS-ONE-MAIN-BE)
 export interface PortalAccount {
   id: string;
   email: string;
   created_at: string;
 }
 
-// Account stored in super_admins â€” owned by the super admin module.
-// Mirrored from portal_accounts via inter-service API call; no FK links the two.
 export interface SuperAdmin {
   id: string;
   email: string;
@@ -31,4 +28,21 @@ export interface LoginResponse {
   session: AuthSession;
 }
 
-
+export interface CurrentUserResponse {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    permissions: string[];
+    activeInstitution?: {
+      id: string;
+      schoolSlug: string;
+      status: string;
+      name?: string;
+    };
+    tenantMembership: {
+      status: 'not_applicable' | 'verified';
+      reason?: string;
+    };
+  };
+}

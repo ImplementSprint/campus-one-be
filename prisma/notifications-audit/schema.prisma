@@ -1,0 +1,10 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma/notifications-audit"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Notifications and audit domain models will be added during the service migration.

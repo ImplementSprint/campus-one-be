@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma/tenant-registry"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model InstitutionProfile {
+  id              String   @id @db.Uuid
+  name            String   @default("")
+  representative  String   @default("")
+  email           String   @default("")
+  contactNumber   String   @default("") @map("contact_number")
+  schoolType      String   @default("") @map("school_type")
+  /// Non-empty slug requirement and lowercase normalization are enforced by SQL checks.
+  targetSubdomain String   @unique(map: "institution_profiles_target_subdomain_unique_idx") @map("target_subdomain")
+  status          String   @default("draft")
+  setupProgress   Int      @default(0) @map("setup_progress")
+  rejectionReason String?  @map("rejection_reason")
+  approvedAt      DateTime? @map("approved_at") @db.Timestamptz(6)
+  approvedBy      String?  @map("approved_by") @db.Uuid
+  suspendedAt     DateTime? @map("suspended_at") @db.Timestamptz(6)
+  suspendedBy     String?  @map("suspended_by") @db.Uuid
+  reactivatedAt   DateTime? @map("reactivated_at") @db.Timestamptz(6)
+  reactivatedBy   String?  @map("reactivated_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  onboardingProgress OnboardingProgress?
+  ownerInvitations SchoolOwnerInvitation[]
+  auditEvents AuditEvent[]
+
+  @@map("institution_profiles")
+}
+
+model OnboardingProgress {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  institutionId String   @unique @map("institution_id") @db.Uuid
+  currentStep   String   @default("registration_submitted") @map("current_step")
+  progress      Int      @default(10)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  institution InstitutionProfile @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding_progress")
+}
+
+model SchoolOwnerInvitation {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  institutionId String   @map("institution_id") @db.Uuid
+  email         String
+  tokenHash     String   @map("token_hash")
+  status        String   @default("pending")
+  expiresAt     DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  institution InstitutionProfile @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId], map: "school_owner_invitations_institution_idx")
+  @@index([email], map: "school_owner_invitations_email_idx")
+  @@map("school_owner_invitations")
+}
+
+model AuditEvent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  institutionId String?  @map("institution_id") @db.Uuid
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  eventType     String   @map("event_type")
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  institution InstitutionProfile? @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+
+  @@index([institutionId], map: "audit_events_institution_idx")
+  @@index([eventType], map: "audit_events_event_type_idx")
+  @@map("audit_events")
+}

@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   ConflictException,
   UnauthorizedException,
@@ -6,9 +6,10 @@ import {
   Inject,
 } from '@nestjs/common';
 import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import type { TenantContext } from '../../../tenants/src/tenant-context';
 import type { SignUpDto } from './dto/signup.dto';
 import type { LoginDto } from './dto/login.dto';
-import type { SignUpResponse, LoginResponse } from './interfaces/super-admin.interface';
+import type { CurrentUserResponse, SignUpResponse, LoginResponse } from './interfaces/super-admin.interface';
 
 export type StoredAccount = {
   id: string;
@@ -111,6 +112,11 @@ export class PostgresAuthRepository implements AuthRepository {
   }
 }
 
+export function getBearerToken(authorizationHeader?: string): string | null {
+  const [scheme, token] = authorizationHeader?.trim().split(/\s+/) ?? [];
+  return scheme?.toLowerCase() === 'bearer' && token ? token : null;
+}
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -159,6 +165,10 @@ function permissionsForRole(role: string): string[] {
       'school.users.manage',
     ];
   }
+
+  if (role === 'alumni_admin') return ['alumni.read', 'alumni.write', 'audit.read'];
+  if (role === 'student') return ['academics.read', 'enrollment.self.write', 'grades.self.read'];
+  if (role === 'professor') return ['professor.classes.read', 'professor.announcements.write', 'grades.write'];
 
   return [];
 }
@@ -219,6 +229,10 @@ function verifyUserToken(token: string): CurrentUser {
 @Injectable()
 export class AuthService {
   constructor(@Inject(AUTH_REPOSITORY) private readonly repository: AuthRepository) {}
+
+  static forClients(_authClient: any, _adminClient: any, repository?: AuthRepository): AuthService {
+    return new AuthService(repository ?? new PostgresAuthRepository());
+  }
 
   async signUp(dto: SignUpDto): Promise<SignUpResponse> {
     const email = normalizeEmail(dto.email);
@@ -283,5 +297,23 @@ export class AuthService {
 
   async verifyAccessToken(token: string): Promise<CurrentUser> {
     return verifyUserToken(token);
+  }
+
+  async getCurrentUser(authorizationHeader?: string, tenantContext?: TenantContext): Promise<CurrentUserResponse> {
+    const token = getBearerToken(authorizationHeader);
+    if (!token) throw new UnauthorizedException('Missing bearer token.');
+    const user = await this.verifyAccessToken(token);
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role as any,
+        permissions: user.permissions as any,
+        activeInstitution: tenantContext?.resolvedInstitution,
+        tenantMembership: {
+          status: tenantContext?.resolvedInstitution ? 'verified' : 'not_applicable',
+        },
+      },
+    };
   }
 }
