@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../apps/gateway/src/app.module';
+import { TenantResolutionService } from '../libs/tenants/src/tenant-resolution.service';
 
 type MatrixCase = {
   name: string;
@@ -14,6 +15,23 @@ type MatrixCase = {
 };
 
 process.env.CAMPUS_ONE_AUTH_SECRET ||= 'route-security-secret-local';
+TenantResolutionService.prototype.resolveTenantContext = async function resolveMatrixTenantContext(context) {
+  if (context.isPlatformRoute || (!context.schoolSlug && !context.institutionId)) return context;
+  const id = context.institutionId ?? context.schoolSlug ?? 'school-a';
+  const schoolSlug = context.schoolSlug ?? id;
+  return {
+    ...context,
+    institutionId: id,
+    schoolSlug,
+    resolvedInstitution: {
+      id,
+      schoolSlug,
+      status: 'approved',
+      name: 'Route Security Matrix School',
+    },
+    isPlatformRoute: false,
+  };
+};
 
 function signMatrixToken(payload: Record<string, unknown>) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -26,6 +44,7 @@ const alumniAdminHeaders = {
   Authorization: `Bearer ${signMatrixToken({ sub: 'admin-1', role: 'alumni_admin', activeInstitutionId: 'school-a' })}`,
   'X-User-Id': 'admin-1',
   'X-User-Role': 'alumni_admin',
+  Host: 'api.itsandbox.site',
   'X-Institution-Id': 'school-a',
 };
 
@@ -33,6 +52,7 @@ const professorHeaders = {
   Authorization: `Bearer ${signMatrixToken({ sub: 'professor-123', role: 'professor', activeInstitutionId: 'school-a' })}`,
   'X-User-Id': 'professor-123',
   'X-User-Role': 'professor',
+  Host: 'api.itsandbox.site',
   'X-Institution-Id': 'school-a',
 };
 
@@ -40,6 +60,7 @@ const studentHeaders = {
   Authorization: `Bearer ${signMatrixToken({ sub: 'student-1', role: 'student', activeInstitutionId: 'school-a' })}`,
   'X-User-Id': 'student-1',
   'X-User-Role': 'student',
+  Host: 'api.itsandbox.site',
   'X-Institution-Id': 'school-a',
 };
 

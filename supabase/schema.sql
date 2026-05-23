@@ -104,12 +104,19 @@ CREATE TABLE IF NOT EXISTS public.institution_profiles (
   email            TEXT        NOT NULL DEFAULT '',
   contact_number   TEXT        NOT NULL DEFAULT '',
   school_type      TEXT        NOT NULL DEFAULT '',
-  target_subdomain TEXT        NOT NULL DEFAULT '',
+  target_subdomain TEXT        NOT NULL,
   status           TEXT        NOT NULL DEFAULT 'draft',
   setup_progress   INTEGER     NOT NULL DEFAULT 0,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT institution_profiles_target_subdomain_required_lowercase_check CHECK (
+    target_subdomain <> ''
+    AND target_subdomain = LOWER(target_subdomain)
+  )
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS institution_profiles_target_subdomain_unique_idx
+  ON public.institution_profiles (target_subdomain);
 
 CREATE OR REPLACE FUNCTION public.institution_profiles_set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS
@@ -129,6 +136,58 @@ ALTER TABLE public.institution_profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS institution_profiles_select_own ON public.institution_profiles;
 CREATE POLICY institution_profiles_select_own ON public.institution_profiles
   FOR SELECT USING (auth.uid() = id);
+
+CREATE TABLE IF NOT EXISTS public.tenant_user_memberships (
+  id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
+  user_id        UUID        NOT NULL,
+  email          TEXT        NOT NULL,
+  role           TEXT        NOT NULL,
+  status         TEXT        NOT NULL DEFAULT 'active',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT tenant_user_memberships_role_check CHECK (
+    role IN (
+      'school_owner',
+      'school_admin',
+      'registrar',
+      'admissions_admin',
+      'student_admin',
+      'professor',
+      'student',
+      'applicant',
+      'alumni',
+      'alumni_admin'
+    )
+  ),
+  CONSTRAINT tenant_user_memberships_status_check CHECK (status IN ('active', 'inactive', 'suspended')),
+  CONSTRAINT tenant_user_memberships_unique_user_school UNIQUE (institution_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS tenant_user_memberships_user_idx
+  ON public.tenant_user_memberships (user_id, status);
+
+CREATE INDEX IF NOT EXISTS tenant_user_memberships_institution_role_idx
+  ON public.tenant_user_memberships (institution_id, role, status);
+
+CREATE OR REPLACE FUNCTION public.tenant_user_memberships_set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tenant_user_memberships_set_updated_at ON public.tenant_user_memberships;
+CREATE TRIGGER tenant_user_memberships_set_updated_at
+  BEFORE UPDATE ON public.tenant_user_memberships
+  FOR EACH ROW EXECUTE PROCEDURE public.tenant_user_memberships_set_updated_at();
+
+ALTER TABLE public.tenant_user_memberships ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_user_memberships_select_own ON public.tenant_user_memberships;
+CREATE POLICY tenant_user_memberships_select_own ON public.tenant_user_memberships
+  FOR SELECT USING (auth.uid() = user_id);
 
 -- =============================================================================
 -- SECTION 3: CORE IDENTITY
@@ -153,6 +212,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 CREATE TABLE IF NOT EXISTS public.admin_users (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   email         TEXT        NOT NULL UNIQUE,
   password_hash TEXT        NOT NULL,
@@ -194,6 +254,7 @@ CREATE TABLE IF NOT EXISTS public.user_sessions (
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.applicant_profiles (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                       UUID                    PRIMARY KEY DEFAULT gen_random_uuid(),
   email                    TEXT                    NOT NULL UNIQUE,
   first_name               TEXT                    NOT NULL DEFAULT '',
@@ -220,6 +281,7 @@ CREATE TABLE IF NOT EXISTS public.applicant_profiles (
 );
 
 CREATE TABLE IF NOT EXISTS public.academic_background (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id    UUID        NOT NULL REFERENCES public.applicant_profiles (id),
   grade_level     TEXT        NOT NULL,
@@ -229,6 +291,7 @@ CREATE TABLE IF NOT EXISTS public.academic_background (
 );
 
 CREATE TABLE IF NOT EXISTS public.alumni_relatives (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id   UUID        NOT NULL REFERENCES public.applicant_profiles (id),
   name           TEXT        NOT NULL,
@@ -240,6 +303,7 @@ CREATE TABLE IF NOT EXISTS public.alumni_relatives (
 );
 
 CREATE TABLE IF NOT EXISTS public.parent_information (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id        UUID        NOT NULL UNIQUE REFERENCES public.applicant_profiles (id),
   father_name         TEXT        NOT NULL,
@@ -257,6 +321,7 @@ CREATE TABLE IF NOT EXISTS public.parent_information (
 );
 
 CREATE TABLE IF NOT EXISTS public.program_selections (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                 UUID                  PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id       UUID                  NOT NULL UNIQUE REFERENCES public.applicant_profiles (id),
   school_level       public.school_level   NOT NULL,
@@ -270,6 +335,7 @@ CREATE TABLE IF NOT EXISTS public.program_selections (
 );
 
 CREATE TABLE IF NOT EXISTS public.applicant_documents (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id               UUID                   PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id     UUID                   NOT NULL REFERENCES public.applicant_profiles (id),
   document_name    TEXT                   NOT NULL,
@@ -285,6 +351,7 @@ CREATE TABLE IF NOT EXISTS public.applicant_documents (
 );
 
 CREATE TABLE IF NOT EXISTS public.admissions_results (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id              UUID                    PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id    UUID                    NOT NULL UNIQUE REFERENCES public.applicant_profiles (id),
   status          public.admission_status NOT NULL DEFAULT 'Under Review',
@@ -300,6 +367,7 @@ CREATE TABLE IF NOT EXISTS public.admissions_results (
 );
 
 CREATE TABLE IF NOT EXISTS public.admissions_activity_logs (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id             UUID                  PRIMARY KEY DEFAULT gen_random_uuid(),
   event_type     TEXT                  NOT NULL,
   applicant_type public.applicant_type NOT NULL,
@@ -313,6 +381,7 @@ CREATE TABLE IF NOT EXISTS public.admissions_activity_logs (
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS public.testing_centers (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   name       TEXT        NOT NULL,
   address    TEXT        NOT NULL,
@@ -323,6 +392,7 @@ CREATE TABLE IF NOT EXISTS public.testing_centers (
 );
 
 CREATE TABLE IF NOT EXISTS public.exam_schedules (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                UUID               PRIMARY KEY DEFAULT gen_random_uuid(),
   testing_center_id UUID               NOT NULL REFERENCES public.testing_centers (id),
   exam_date         DATE               NOT NULL,
@@ -336,6 +406,7 @@ CREATE TABLE IF NOT EXISTS public.exam_schedules (
 );
 
 CREATE TABLE IF NOT EXISTS public.exam_registrations (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id      UUID        NOT NULL REFERENCES public.applicant_profiles (id),
   exam_schedule_id  UUID        NOT NULL REFERENCES public.exam_schedules (id),
@@ -345,6 +416,7 @@ CREATE TABLE IF NOT EXISTS public.exam_registrations (
 );
 
 CREATE TABLE IF NOT EXISTS public.exam_logs (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id             UUID                  PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id   UUID                  NOT NULL REFERENCES public.applicant_profiles (id),
   school_level   public.school_level   NOT NULL,
@@ -356,6 +428,7 @@ CREATE TABLE IF NOT EXISTS public.exam_logs (
 );
 
 CREATE TABLE IF NOT EXISTS public.exam_scores (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id UUID        NOT NULL REFERENCES public.applicant_profiles (id),
   subject      TEXT        NOT NULL,
@@ -366,6 +439,7 @@ CREATE TABLE IF NOT EXISTS public.exam_scores (
 );
 
 CREATE TABLE IF NOT EXISTS public.reschedule_requests (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                    UUID                     PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id          UUID                     NOT NULL REFERENCES public.applicant_profiles (id),
   original_schedule_id  UUID                     NOT NULL REFERENCES public.exam_schedules (id),
@@ -384,6 +458,7 @@ CREATE TABLE IF NOT EXISTS public.reschedule_requests (
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS public.fee_configuration (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   fee_type    TEXT        NOT NULL UNIQUE,
   amount      NUMERIC     NOT NULL,
@@ -394,6 +469,7 @@ CREATE TABLE IF NOT EXISTS public.fee_configuration (
 );
 
 CREATE TABLE IF NOT EXISTS public.payment_transactions (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                    UUID                  PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id          UUID                  NOT NULL REFERENCES public.applicant_profiles (id),
   fee_type              TEXT                  NOT NULL,
@@ -407,6 +483,7 @@ CREATE TABLE IF NOT EXISTS public.payment_transactions (
 );
 
 CREATE TABLE IF NOT EXISTS public.guidelines (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   title         TEXT        NOT NULL,
   content       TEXT        NOT NULL,
@@ -422,6 +499,7 @@ CREATE TABLE IF NOT EXISTS public.guidelines (
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.student_accounts (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   applicant_id      UUID        NOT NULL UNIQUE REFERENCES public.applicant_profiles (id),
   student_number    TEXT        NOT NULL UNIQUE,
@@ -442,6 +520,7 @@ CREATE TABLE IF NOT EXISTS public.student_accounts (
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.professor_users (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id            UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
   email         TEXT        NOT NULL UNIQUE,
   password_hash TEXT        NOT NULL,
@@ -457,6 +536,7 @@ CREATE TABLE IF NOT EXISTS public.professor_users (
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.subjects (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   code        TEXT        NOT NULL UNIQUE,
   name        TEXT        NOT NULL,
@@ -472,6 +552,7 @@ CREATE TABLE IF NOT EXISTS public.subjects (
 );
 
 CREATE TABLE IF NOT EXISTS public.curriculum (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   program     TEXT        NOT NULL,
   year_level  INTEGER     NOT NULL,
@@ -481,6 +562,7 @@ CREATE TABLE IF NOT EXISTS public.curriculum (
 );
 
 CREATE TABLE IF NOT EXISTS public.class_assignments (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   professor_id UUID        NOT NULL REFERENCES public.professor_users (id),
   subject_id   UUID        NOT NULL REFERENCES public.subjects (id),
@@ -493,6 +575,7 @@ CREATE TABLE IF NOT EXISTS public.class_assignments (
 );
 
 CREATE TABLE IF NOT EXISTS public.class_enrollments (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   class_assignment_id UUID        NOT NULL REFERENCES public.class_assignments (id),
   student_id          UUID        NOT NULL REFERENCES public.student_accounts (id),
@@ -505,6 +588,7 @@ CREATE TABLE IF NOT EXISTS public.class_enrollments (
 );
 
 CREATE TABLE IF NOT EXISTS public.grades (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   enrollment_id UUID        NOT NULL UNIQUE REFERENCES public.class_enrollments (id),
   professor_id  UUID        NOT NULL REFERENCES public.professor_users (id),
@@ -524,6 +608,7 @@ CREATE TABLE IF NOT EXISTS public.grades (
 );
 
 CREATE TABLE IF NOT EXISTS public.grade_history (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   grade_id         UUID        NOT NULL REFERENCES public.grades (id),
   professor_id     UUID        NOT NULL REFERENCES public.professor_users (id),
@@ -542,6 +627,7 @@ CREATE TABLE IF NOT EXISTS public.grade_history (
 );
 
 CREATE TABLE IF NOT EXISTS public.announcements (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   class_assignment_id UUID        NOT NULL REFERENCES public.class_assignments (id),
   professor_id        UUID        NOT NULL REFERENCES public.professor_users (id),
@@ -588,6 +674,7 @@ CREATE TABLE IF NOT EXISTS public.submissions (
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS public.subject_offerings (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   subject_id  UUID        NOT NULL REFERENCES public.subjects (id) ON DELETE CASCADE,
   term        TEXT        NOT NULL,
@@ -604,6 +691,7 @@ CREATE TABLE IF NOT EXISTS public.subject_offerings (
 );
 
 CREATE TABLE IF NOT EXISTS public.enrollments (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id  UUID        NOT NULL REFERENCES public.student_accounts (id) ON DELETE CASCADE,
   school_year TEXT        NOT NULL,
@@ -617,6 +705,7 @@ CREATE TABLE IF NOT EXISTS public.enrollments (
 );
 
 CREATE TABLE IF NOT EXISTS public.enrollment_items (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   enrollment_id UUID        NOT NULL REFERENCES public.enrollments (id) ON DELETE CASCADE,
   offering_id   UUID        NOT NULL REFERENCES public.subject_offerings (id) ON DELETE CASCADE,
@@ -645,6 +734,7 @@ CREATE TABLE IF NOT EXISTS public.enrollment_activity_logs (
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.alumni (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   email           TEXT        NOT NULL UNIQUE,
   password_hash   TEXT        NOT NULL,
@@ -729,6 +819,7 @@ CREATE TABLE IF NOT EXISTS alumni.card_applications (
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.notifications (
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
   id         UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id    UUID        REFERENCES public.profiles (id),
   title      TEXT        NOT NULL,
@@ -737,6 +828,202 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+
+-- =============================================================================
+-- SECTION 13: INSTITUTION RESOURCES
+-- Generic JSONB store for institution dashboard data
+-- (classes, subjects, students, employees, accounts, fees, salary, attendance)
+-- All writes go through the institution-data-service (service role key)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.institution_resources (
+  id             TEXT        PRIMARY KEY,
+  institution_id UUID        NOT NULL REFERENCES public.institution_profiles (id) ON DELETE CASCADE,
+  resource_type  TEXT        NOT NULL,
+  data           JSONB       NOT NULL DEFAULT '{}',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT institution_resources_type_check CHECK (
+    resource_type IN (
+      'classes',
+      'subjects',
+      'students',
+      'employees',
+      'accounts',
+      'fees',
+      'salary',
+      'attendance',
+      'notifications',
+      'school-users',
+      'user-invitations',
+      'delivery-queue',
+      'departments',
+      'programs',
+      'curricula',
+      'sections',
+      'rooms',
+      'class-assignments',
+      'terms'
+    )
+  )
+);
+
+
+CREATE OR REPLACE FUNCTION public.institution_resources_set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS institution_resources_set_updated_at ON public.institution_resources;
+CREATE TRIGGER institution_resources_set_updated_at
+  BEFORE UPDATE ON public.institution_resources
+  FOR EACH ROW EXECUTE PROCEDURE public.institution_resources_set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Tenant indexes and RLS posture
+-- ---------------------------------------------------------------------------
+
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM authenticated;
+GRANT USAGE ON SCHEMA public TO authenticated;
+
+CREATE INDEX IF NOT EXISTS admin_users_institution_idx
+  ON public.admin_users (institution_id);
+
+CREATE INDEX IF NOT EXISTS applicant_profiles_institution_idx
+  ON public.applicant_profiles (institution_id);
+
+CREATE INDEX IF NOT EXISTS academic_background_institution_idx
+  ON public.academic_background (institution_id);
+
+CREATE INDEX IF NOT EXISTS alumni_relatives_institution_idx
+  ON public.alumni_relatives (institution_id);
+
+CREATE INDEX IF NOT EXISTS parent_information_institution_idx
+  ON public.parent_information (institution_id);
+
+CREATE INDEX IF NOT EXISTS program_selections_institution_idx
+  ON public.program_selections (institution_id);
+
+CREATE INDEX IF NOT EXISTS applicant_documents_institution_idx
+  ON public.applicant_documents (institution_id);
+
+CREATE INDEX IF NOT EXISTS admissions_results_institution_idx
+  ON public.admissions_results (institution_id);
+
+CREATE INDEX IF NOT EXISTS admissions_activity_logs_institution_idx
+  ON public.admissions_activity_logs (institution_id);
+
+CREATE INDEX IF NOT EXISTS testing_centers_institution_idx
+  ON public.testing_centers (institution_id);
+
+CREATE INDEX IF NOT EXISTS exam_schedules_institution_idx
+  ON public.exam_schedules (institution_id);
+
+CREATE INDEX IF NOT EXISTS exam_registrations_institution_idx
+  ON public.exam_registrations (institution_id);
+
+CREATE INDEX IF NOT EXISTS exam_logs_institution_idx
+  ON public.exam_logs (institution_id);
+
+CREATE INDEX IF NOT EXISTS exam_scores_institution_idx
+  ON public.exam_scores (institution_id);
+
+CREATE INDEX IF NOT EXISTS reschedule_requests_institution_idx
+  ON public.reschedule_requests (institution_id);
+
+CREATE INDEX IF NOT EXISTS fee_configuration_institution_idx
+  ON public.fee_configuration (institution_id);
+
+CREATE INDEX IF NOT EXISTS payment_transactions_institution_idx
+  ON public.payment_transactions (institution_id);
+
+CREATE INDEX IF NOT EXISTS guidelines_institution_idx
+  ON public.guidelines (institution_id);
+
+CREATE INDEX IF NOT EXISTS student_accounts_institution_idx
+  ON public.student_accounts (institution_id);
+
+CREATE INDEX IF NOT EXISTS professor_users_institution_idx
+  ON public.professor_users (institution_id);
+
+CREATE INDEX IF NOT EXISTS subjects_institution_idx
+  ON public.subjects (institution_id);
+
+CREATE INDEX IF NOT EXISTS curriculum_institution_idx
+  ON public.curriculum (institution_id);
+
+CREATE INDEX IF NOT EXISTS class_assignments_institution_idx
+  ON public.class_assignments (institution_id);
+
+CREATE INDEX IF NOT EXISTS class_enrollments_institution_idx
+  ON public.class_enrollments (institution_id);
+
+CREATE INDEX IF NOT EXISTS grades_institution_idx
+  ON public.grades (institution_id);
+
+CREATE INDEX IF NOT EXISTS grade_history_institution_idx
+  ON public.grade_history (institution_id);
+
+CREATE INDEX IF NOT EXISTS announcements_institution_idx
+  ON public.announcements (institution_id);
+
+CREATE INDEX IF NOT EXISTS subject_offerings_institution_idx
+  ON public.subject_offerings (institution_id);
+
+CREATE INDEX IF NOT EXISTS enrollments_institution_idx
+  ON public.enrollments (institution_id);
+
+CREATE INDEX IF NOT EXISTS enrollment_items_institution_idx
+  ON public.enrollment_items (institution_id);
+
+CREATE INDEX IF NOT EXISTS alumni_institution_idx
+  ON public.alumni (institution_id);
+
+CREATE INDEX IF NOT EXISTS notifications_institution_idx
+  ON public.notifications (institution_id);
+
+CREATE INDEX IF NOT EXISTS institution_resources_institution_idx
+  ON public.institution_resources (institution_id, resource_type);
+
+
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.applicant_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.academic_background ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.alumni_relatives ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.parent_information ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.program_selections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.applicant_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admissions_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admissions_activity_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.testing_centers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_registrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_scores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reschedule_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fee_configuration ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.guidelines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.student_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.professor_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.curriculum ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.class_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.class_enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.grades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.grade_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subject_offerings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enrollment_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.alumni ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.institution_resources ENABLE ROW LEVEL SECURITY;
 -- =============================================================================
 -- SECTION 11: FUNCTIONS & TRIGGERS
 -- =============================================================================
@@ -837,60 +1124,3 @@ CREATE POLICY grades_select_own ON public.grades
 DROP POLICY IF EXISTS notifications_select_own ON public.notifications;
 CREATE POLICY notifications_select_own ON public.notifications
   FOR SELECT USING (user_id = auth.uid());
-
--- =============================================================================
--- SECTION 13: INSTITUTION RESOURCES
--- Generic JSONB store for institution dashboard data
--- (classes, subjects, students, employees, accounts, fees, salary, attendance,
--- school administration settings, users, and academic master data)
--- All writes go through the institution-data-service (service role key)
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS public.institution_resources (
-  id             TEXT        PRIMARY KEY,
-  institution_id UUID        NOT NULL,
-  resource_type  TEXT        NOT NULL,
-  data           JSONB       NOT NULL DEFAULT '{}',
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT institution_resources_type_check CHECK (
-    resource_type IN (
-      'classes',
-      'subjects',
-      'students',
-      'employees',
-      'accounts',
-      'fees',
-      'salary',
-      'attendance',
-      'notifications',
-      'school-users',
-      'user-invitations',
-      'delivery-queue',
-      'departments',
-      'programs',
-      'curricula',
-      'sections',
-      'rooms',
-      'class-assignments',
-      'terms'
-    )
-  )
-);
-
-CREATE INDEX IF NOT EXISTS institution_resources_institution_idx
-  ON public.institution_resources (institution_id, resource_type);
-
-CREATE OR REPLACE FUNCTION public.institution_resources_set_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS
-$$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS institution_resources_set_updated_at ON public.institution_resources;
-CREATE TRIGGER institution_resources_set_updated_at
-  BEFORE UPDATE ON public.institution_resources
-  FOR EACH ROW EXECUTE PROCEDURE public.institution_resources_set_updated_at();

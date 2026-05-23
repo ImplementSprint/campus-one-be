@@ -1,8 +1,11 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { TenantRegistryPrismaClient } from '@campus-one/database/prisma/tenant-registry-prisma.client';
 import { InstitutionModule } from './institution-profile/institution.module';
 import { PublicSchoolController } from './public-school.controller';
 import { PublicSchoolService } from './public-school.service';
 import { TenantResolutionMiddleware } from './tenant-resolution.middleware';
+import { TenantResolutionService } from './tenant-resolution.service';
+import { TenantRegistryRepository } from './tenant-registry.repository';
 import { TenantCurrentController } from './tenant-current.controller';
 import { PlatformSchoolOnboardingController } from './platform-school-onboarding.controller';
 import {
@@ -15,6 +18,9 @@ import {
   imports: [InstitutionModule],
   controllers: [PublicSchoolController, TenantCurrentController, PlatformSchoolOnboardingController],
   providers: [
+    TenantRegistryPrismaClient,
+    TenantRegistryRepository,
+    TenantResolutionService,
     PublicSchoolService,
     PlatformSchoolOnboardingService,
     {
@@ -22,7 +28,7 @@ import {
       useClass: PostgresPlatformSchoolRegistrationRepository,
     },
   ],
-  exports: [InstitutionModule],
+  exports: [InstitutionModule, TenantRegistryRepository, TenantResolutionService],
 })
 export class TenantsModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
