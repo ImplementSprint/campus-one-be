@@ -19,7 +19,7 @@ CREATE SCHEMA IF NOT EXISTS alumni;
 -- ---------------------------------------------------------------------------
 -- Enum Types
 -- ---------------------------------------------------------------------------
-DO $$ BEGIN CREATE TYPE public.admission_status  AS ENUM ('Under Review', 'Passed', 'Not Accepted'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE public.admission_status  AS ENUM ('Under Review', 'Missing Requirements', 'For Exam', 'For Interview', 'Accepted', 'Rejected', 'Waitlisted', 'Passed', 'Not Accepted'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE public.document_status   AS ENUM ('submitted', 'approved', 'rejected', 'pending'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE public.payment_method    AS ENUM ('cash', 'gcash', 'bank_transfer', 'credit_card'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE public.payment_status    AS ENUM ('pending', 'paid', 'failed', 'refunded'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -841,7 +841,8 @@ CREATE POLICY notifications_select_own ON public.notifications
 -- =============================================================================
 -- SECTION 13: INSTITUTION RESOURCES
 -- Generic JSONB store for institution dashboard data
--- (classes, subjects, students, employees, accounts, fees, salary, attendance)
+-- (classes, subjects, students, employees, accounts, fees, salary, attendance,
+-- school administration settings, users, and academic master data)
 -- All writes go through the institution-data-service (service role key)
 -- =============================================================================
 
@@ -853,7 +854,27 @@ CREATE TABLE IF NOT EXISTS public.institution_resources (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT institution_resources_type_check CHECK (
-    resource_type IN ('classes','subjects','students','employees','accounts','fees','salary','attendance')
+    resource_type IN (
+      'classes',
+      'subjects',
+      'students',
+      'employees',
+      'accounts',
+      'fees',
+      'salary',
+      'attendance',
+      'notifications',
+      'school-users',
+      'user-invitations',
+      'delivery-queue',
+      'departments',
+      'programs',
+      'curricula',
+      'sections',
+      'rooms',
+      'class-assignments',
+      'terms'
+    )
   )
 );
 

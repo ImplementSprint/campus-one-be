@@ -1,18 +1,23 @@
 ﻿import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { AlumniService } from './alumni.service';
 import { RegisterAlumniDto } from './dto/register-alumni.dto';
 import { RequestRecordDto } from './dto/request-record.dto';
 import { CardApplicationDto } from './dto/card-application.dto';
 import { AlumniManifest } from './alumni.manifest';
+import { DocumentType } from './interfaces/alumni.interface';
+import { authorizeRoute } from '../../../auth/src/platform-auth/route-authorization';
 
 @Controller('alumni')
 export class AlumniController {
@@ -61,7 +66,23 @@ export class AlumniController {
   @Post('records/request')
   @HttpCode(HttpStatus.CREATED)
   async requestRecord(@Body() dto: RequestRecordDto) {
+    this.validateRecordRequest(dto);
     return this.alumniService.requestRecord(dto);
+  }
+
+  @Get('records/fee/:document_type')
+  calculateRecordFee(
+    @Param('document_type') document_type: DocumentType,
+    @Query('copies') copies?: string,
+  ) {
+    if (!Object.values(DocumentType).includes(document_type)) {
+      throw new BadRequestException('Invalid document type');
+    }
+    const parsedCopies = copies === undefined ? undefined : Number(copies);
+    if (parsedCopies !== undefined && (!Number.isInteger(parsedCopies) || parsedCopies < 1)) {
+      throw new BadRequestException('Invalid copy count');
+    }
+    return this.alumniService.calculateRecordFee(document_type, parsedCopies);
   }
 
   /**
@@ -92,6 +113,11 @@ export class AlumniController {
     return this.alumniService.getCardApplications(actor_uuid);
   }
 
+  @Get('communication-log/:actor_uuid')
+  async getCommunicationLog(@Param('actor_uuid') actor_uuid: string) {
+    return this.alumniService.getCommunicationLog(actor_uuid);
+  }
+
   // â”€â”€â”€ Admin endpoints (all records, not scoped to one user) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /**
@@ -99,7 +125,14 @@ export class AlumniController {
    * Returns all alumni registration logs. Used by Alumni Admin dashboard.
    */
   @Get('admin/registry')
-  async adminRegistry() {
+  async adminRegistry(
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-role') role?: string,
+    @Headers('x-user-id') userId?: string,
+    @Headers('x-institution-id') institutionId?: string,
+    @Headers('x-school-slug') schoolSlug?: string,
+  ) {
+    authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
     return this.alumniService.getAllRegistrations();
   }
 
@@ -108,8 +141,27 @@ export class AlumniController {
    * Returns all document requests. Used by Alumni Admin dashboard.
    */
   @Get('admin/requests')
-  async adminRequests() {
+  async adminRequests(
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-role') role?: string,
+    @Headers('x-user-id') userId?: string,
+    @Headers('x-institution-id') institutionId?: string,
+    @Headers('x-school-slug') schoolSlug?: string,
+  ) {
+    authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
     return this.alumniService.getAllRecordRequests();
+  }
+
+  @Get('admin/card-requests')
+  async adminCardRequests(
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-role') role?: string,
+    @Headers('x-user-id') userId?: string,
+    @Headers('x-institution-id') institutionId?: string,
+    @Headers('x-school-slug') schoolSlug?: string,
+  ) {
+    authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
+    return this.alumniService.getAllCardApplications();
   }
 
   /**
@@ -119,9 +171,55 @@ export class AlumniController {
   @Patch('admin/requests/:log_id')
   async adminUpdateRequest(
     @Param('log_id') log_id: string,
-    @Body() body: { status_code: number },
+    @Body() body: { status_code: number; payment_status?: 'pending' | 'paid' },
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-role') role?: string,
+    @Headers('x-user-id') userId?: string,
+    @Headers('x-institution-id') institutionId?: string,
+    @Headers('x-school-slug') schoolSlug?: string,
   ) {
-    return this.alumniService.updateRecordStatus(log_id, body.status_code);
+    authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
+    this.validateRequestStatus(body);
+    return this.alumniService.updateRecordStatus(log_id, body.status_code, body.payment_status);
+  }
+
+  @Patch('admin/card-requests/:log_id')
+  async adminUpdateCardRequest(
+    @Param('log_id') log_id: string,
+    @Body() body: { status_code: number; payment_status?: 'pending' | 'paid' },
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-role') role?: string,
+    @Headers('x-user-id') userId?: string,
+    @Headers('x-institution-id') institutionId?: string,
+    @Headers('x-school-slug') schoolSlug?: string,
+  ) {
+    authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
+    this.validateRequestStatus(body);
+    return this.alumniService.updateCardApplicationStatus(log_id, body.status_code, body.payment_status);
+  }
+
+  private validateRecordRequest(dto: RequestRecordDto) {
+    const isValidDocumentType = Object.values(DocumentType).includes(dto?.document_type);
+    const isValidCopyCount =
+      dto?.number_of_copies === undefined ||
+      (Number.isInteger(dto.number_of_copies) && dto.number_of_copies >= 1);
+    const isValidDeliveryMethod =
+      dto?.delivery_method === undefined ||
+      ['pickup', 'delivery', 'courier'].includes(dto.delivery_method);
+
+    if (!dto?.actor_uuid || !dto?.tenant_id || !isValidDocumentType || !isValidCopyCount || !isValidDeliveryMethod) {
+      throw new BadRequestException('Invalid document request payload');
+    }
+  }
+
+  private validateRequestStatus(body: { status_code: number; payment_status?: string }) {
+    const validPaymentStatus =
+      body?.payment_status === undefined ||
+      body.payment_status === 'pending' ||
+      body.payment_status === 'paid';
+    if (!Number.isInteger(body?.status_code) || !validPaymentStatus) {
+      throw new BadRequestException('Invalid request status payload');
+    }
   }
 }
 

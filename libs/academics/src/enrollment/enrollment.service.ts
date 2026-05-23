@@ -92,6 +92,8 @@ export class EnrollmentService {
   async submit(studentId: string, classAssignmentIds: string[]) {
     if (!studentId || !classAssignmentIds?.length)
       throw new BadRequestException('Missing required fields: studentId and classAssignmentIds');
+    if (findDuplicateClassAssignmentIds(classAssignmentIds).length)
+      throw new BadRequestException('Duplicate class selections are not allowed');
 
     const { data: existing } = await this.db
       .from('class_enrollments').select('class_assignment_id')
@@ -101,7 +103,12 @@ export class EnrollmentService {
       throw new BadRequestException('Student is already enrolled in one or more of these classes');
 
     const { data: assignments } = await this.db
-      .from('class_assignments').select('id, max_students').in('id', classAssignmentIds);
+      .from('class_assignments').select('id, max_students, schedule').in('id', classAssignmentIds);
+    if ((assignments || []).length !== classAssignmentIds.length)
+      throw new BadRequestException('One or more selected classes are no longer available');
+    if (hasScheduleConflict(assignments || []))
+      throw new BadRequestException('Selected classes have a schedule conflict');
+
     const { data: enrollmentCounts } = await this.db
       .from('class_enrollments').select('class_assignment_id')
       .in('class_assignment_id', classAssignmentIds).eq('enrollment_status', 'enrolled');
@@ -125,6 +132,101 @@ export class EnrollmentService {
     if (error) throw new Error(error.message);
 
     return { success: true, message: 'Successfully enrolled in classes', enrollments: data, count: data?.length || 0 };
+  }
+
+  async addDrop(payload: {
+    studentId: string;
+    addClassAssignmentIds?: string[];
+    dropEnrollmentIds?: string[];
+    reason?: string;
+  }) {
+    const record = {
+      student_id: payload.studentId,
+      request_type: 'add_drop',
+      add_class_assignment_ids: payload.addClassAssignmentIds ?? [],
+      drop_enrollment_ids: payload.dropEnrollmentIds ?? [],
+      reason: payload.reason ?? null,
+      status: 'pending_registrar_review',
+      requested_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await this.db
+      .from('enrollment_requests')
+      .insert(record)
+      .select('id, status, request_type, requested_at')
+      .single();
+    if (error) throw new Error(error.message);
+
+    await this.writeAuditEvent(payload.studentId, 'enrollment.add_drop.requested', data);
+    return { success: true, status: 'pending_registrar_review', request: data };
+  }
+
+  async requestIrregularApproval(payload: {
+    studentId: string;
+    classAssignmentIds: string[];
+    reason: string;
+  }) {
+    const { data, error } = await this.db
+      .from('enrollment_requests')
+      .insert({
+        student_id: payload.studentId,
+        request_type: 'irregular_enrollment',
+        add_class_assignment_ids: payload.classAssignmentIds,
+        reason: payload.reason,
+        status: 'pending_adviser_review',
+        requested_at: new Date().toISOString(),
+      })
+      .select('id, status, request_type, requested_at')
+      .single();
+    if (error) throw new Error(error.message);
+
+    await this.writeAuditEvent(payload.studentId, 'enrollment.irregular.requested', data);
+    return { success: true, status: 'pending_adviser_review', request: data };
+  }
+
+  async approveByRegistrar(payload: { requestId: string; registrarId: string; notes?: string }) {
+    const { data, error } = await this.db
+      .from('enrollment_requests')
+      .update({
+        status: 'approved',
+        registrar_id: payload.registrarId,
+        registrar_notes: payload.notes ?? null,
+        approved_at: new Date().toISOString(),
+      })
+      .eq('id', payload.requestId)
+      .select('id, student_id, status, request_type, approved_at')
+      .single();
+    if (error) throw new Error(error.message);
+
+    await this.writeAuditEvent(data.student_id, 'enrollment.registrar.approved', data);
+    return { success: true, status: 'approved', request: data };
+  }
+
+  async confirm(payload: { studentId: string; enrollmentIds: string[] }) {
+    const confirmedAt = new Date().toISOString();
+    const { data, error } = await this.db
+      .from('class_enrollments')
+      .update({
+        enrollment_status: 'confirmed',
+        confirmed_at: confirmedAt,
+      })
+      .eq('student_id', payload.studentId)
+      .in('id', payload.enrollmentIds)
+      .select('id, enrollment_status, confirmed_at');
+    if (error) throw new Error(error.message);
+
+    await this.writeAuditEvent(payload.studentId, 'enrollment.confirmed', {
+      enrollmentIds: payload.enrollmentIds,
+      confirmedAt,
+    });
+
+    return {
+      success: true,
+      status: 'confirmed',
+      confirmedAt,
+      enrollments: data ?? [],
+      count: data?.length ?? 0,
+    };
   }
 
   async getStatus(studentId: string) {
@@ -156,6 +258,164 @@ export class EnrollmentService {
       })),
     };
   }
+
+  private async writeAuditEvent(studentId: string, action: string, metadata: unknown) {
+    await this.db
+      .from('enrollment_audit_events')
+      .insert({
+        student_id: studentId,
+        action,
+        metadata,
+        created_at: new Date().toISOString(),
+      });
+  }
 }
 
+type ScheduledClass = {
+  id: string;
+  schedule?: string | null;
+};
+
+type ScheduleWindow = {
+  id: string;
+  day: string;
+  start: number;
+  end: number;
+};
+
+type EnrollmentPeriod = {
+  status?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+};
+
+type StudentEligibilityInput = {
+  enrollmentStatus?: string | null;
+  holds?: Array<unknown> | null;
+};
+
+export function findDuplicateClassAssignmentIds(classAssignmentIds: string[]) {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  for (const id of classAssignmentIds) {
+    const normalized = id.trim();
+    if (seen.has(normalized)) duplicates.add(normalized);
+    seen.add(normalized);
+  }
+
+  return [...duplicates];
+}
+
+export function hasScheduleConflict(classes: ScheduledClass[]) {
+  const windows = classes.flatMap((scheduledClass) => parseScheduleWindows(scheduledClass));
+
+  return windows.some((window, index) => {
+    return windows.slice(index + 1).some((candidate) => {
+      return (
+        window.id !== candidate.id &&
+        window.day === candidate.day &&
+        window.start < candidate.end &&
+        candidate.start < window.end
+      );
+    });
+  });
+}
+
+export function isEnrollmentPeriodOpen(period: EnrollmentPeriod | null | undefined, now = new Date()) {
+  if (!period || period.status !== 'open') return false;
+  const startsAt = period.startsAt ? new Date(period.startsAt) : null;
+  const endsAt = period.endsAt ? new Date(period.endsAt) : null;
+
+  if (startsAt && Number.isFinite(startsAt.getTime()) && now < startsAt) return false;
+  if (endsAt && Number.isFinite(endsAt.getTime()) && now > endsAt) return false;
+
+  return true;
+}
+
+export function validateStudentEligibility(input: StudentEligibilityInput) {
+  const holds = input.holds ?? [];
+  if (input.enrollmentStatus !== 'active') {
+    return { eligible: false, reason: 'student_not_active' };
+  }
+  if (holds.length > 0) {
+    return { eligible: false, reason: 'student_has_holds' };
+  }
+
+  return { eligible: true, reason: null };
+}
+
+export function listMissingPrerequisites(requiredSubjectIds: string[], completedSubjectIds: string[]) {
+  const completed = new Set(completedSubjectIds);
+  return requiredSubjectIds.filter((subjectId) => !completed.has(subjectId));
+}
+
+export function validateCurriculumPath(selectedSubjectIds: string[], curriculumSubjectIds: string[]) {
+  const allowed = new Set(curriculumSubjectIds);
+  return selectedSubjectIds.filter((subjectId) => !allowed.has(subjectId));
+}
+
+function parseScheduleWindows(scheduledClass: ScheduledClass): ScheduleWindow[] {
+  const schedule = scheduledClass.schedule?.trim();
+  if (!schedule || schedule.toUpperCase() === 'TBA') return [];
+
+  const match = schedule.match(/^(?<days>[A-Za-z/,\s]+)\s+(?<start>\d{1,2}:\d{2})\s*-\s*(?<end>\d{1,2}:\d{2})/);
+  if (!match?.groups) return [];
+
+  const start = toMinutes(match.groups.start);
+  const end = toMinutes(match.groups.end);
+  if (start == null || end == null || start >= end) return [];
+
+  return parseDays(match.groups.days).map((day) => ({
+    id: scheduledClass.id,
+    day,
+    start,
+    end,
+  }));
+}
+
+function parseDays(daysText: string) {
+  return daysText
+    .split(/[\/,\s]+/)
+    .map((day) => normalizeDay(day))
+    .filter((day): day is string => Boolean(day));
+}
+
+function normalizeDay(day: string) {
+  const normalized = day.trim().toLowerCase();
+  const dayMap: Record<string, string> = {
+    m: 'mon',
+    mon: 'mon',
+    monday: 'mon',
+    t: 'tue',
+    tue: 'tue',
+    tues: 'tue',
+    tuesday: 'tue',
+    w: 'wed',
+    wed: 'wed',
+    wednesday: 'wed',
+    th: 'thu',
+    thu: 'thu',
+    thur: 'thu',
+    thurs: 'thu',
+    thursday: 'thu',
+    f: 'fri',
+    fri: 'fri',
+    friday: 'fri',
+    sat: 'sat',
+    saturday: 'sat',
+    sun: 'sun',
+    sunday: 'sun',
+  };
+
+  return dayMap[normalized];
+}
+
+function toMinutes(time: string) {
+  const [hourText, minuteText] = time.split(':');
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  return hour * 60 + minute;
+}
 

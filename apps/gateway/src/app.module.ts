@@ -8,10 +8,15 @@ import { ProfileModule } from '../../../libs/academics/src/profile/profile.modul
 import { DashboardModule } from '../../../libs/academics/src/dashboard/dashboard.module';
 import { CoursesModule } from '../../../libs/academics/src/courses/courses.module';
 import { GradesModule } from '../../../libs/academics/src/grades/grades.module';
+import { ProfessorModule } from '../../../libs/academics/src/professor/professor.module';
 import { SubjectsModule } from '../../../libs/academics/src/subjects/subjects.module';
 import { StudentModule } from '../../../libs/academics/src/student/student.module';
 import { ApplicationModule } from '../../../libs/admissions/src/application/application.module';
 import { AlumniModule } from '../../../libs/alumni/src/alumni/alumni.module';
+import { BillingModule } from '../../../libs/billing/src/billing.module';
+import { NotificationsModule } from '../../../libs/notifications/src/notifications.module';
+import { AuditModule } from '../../../libs/audit/src/audit.module';
+import { SchoolAdminModule } from '../../../libs/school-admin/src/school-admin.module';
 
 @Module({
   imports: [
@@ -23,10 +28,15 @@ import { AlumniModule } from '../../../libs/alumni/src/alumni/alumni.module';
     DashboardModule,
     CoursesModule,
     GradesModule,
+    ProfessorModule,
     SubjectsModule,
     StudentModule,
     ApplicationModule,
     AlumniModule,
+    BillingModule,
+    NotificationsModule,
+    AuditModule,
+    SchoolAdminModule,
   ],
   controllers: [AppController],
 })

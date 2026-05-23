@@ -1,4 +1,5 @@
 ﻿import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -50,7 +51,44 @@ export class StudentController {
    */
   @Get(':id')
   async findOne(@Param('id') id: string) {
+    this.assertStudentId(id);
+
     return this.studentService.findOne(id);
+  }
+
+  @Get(':id/enrolled-courses')
+  async getEnrolledCourses(@Param('id') id: string) {
+    this.assertStudentId(id);
+
+    return this.studentService.getEnrolledCourses(id);
+  }
+
+  @Get(':id/class-schedule')
+  async getClassSchedule(@Param('id') id: string) {
+    this.assertStudentId(id);
+
+    return this.studentService.getClassSchedule(id);
+  }
+
+  @Get(':id/curriculum-progress')
+  async getCurriculumProgress(@Param('id') id: string) {
+    this.assertStudentId(id);
+
+    return this.studentService.getCurriculumProgress(id);
+  }
+
+  @Get(':id/holds-deficiencies')
+  async getHoldsAndDeficiencies(@Param('id') id: string) {
+    this.assertStudentId(id);
+
+    return this.studentService.getHoldsAndDeficiencies(id);
+  }
+
+  @Get(':id/announcements')
+  async getAnnouncements(@Param('id') id: string) {
+    this.assertStudentId(id);
+
+    return this.studentService.getAnnouncements(id);
   }
 
   /**
@@ -64,6 +102,9 @@ export class StudentController {
     @Param('id') id: string,
     @Body() dto: UpdateStudentStatusDto,
   ) {
+    this.assertStudentId(id);
+    this.assertStatusPayload(dto);
+
     return this.studentService.updateStatus(id, dto);
   }
 
@@ -77,7 +118,31 @@ export class StudentController {
     @Param('id') id: string,
     @Body() dto: UpdateStudentInfoDto,
   ) {
+    this.assertStudentId(id);
+    this.assertInfoPayload(dto);
+
     return this.studentService.updateInfo(id, dto);
+  }
+
+  private assertStudentId(id: string) {
+    if (!id?.trim()) {
+      throw new BadRequestException('student id is required');
+    }
+  }
+
+  private assertStatusPayload(dto: UpdateStudentStatusDto) {
+    if (
+      dto?.enrollment_status !== 'active' &&
+      dto?.enrollment_status !== 'inactive'
+    ) {
+      throw new BadRequestException('enrollment_status must be active or inactive');
+    }
+  }
+
+  private assertInfoPayload(dto: UpdateStudentInfoDto) {
+    if (!dto || (!dto.email?.trim() && !dto.student_number?.trim())) {
+      throw new BadRequestException('At least one of email or student_number is required');
+    }
   }
 }
 

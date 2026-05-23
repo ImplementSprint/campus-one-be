@@ -127,6 +127,138 @@ export class StudentService {
     } as IStudentWithProfile;
   }
 
+  async getEnrolledCourses(id: string) {
+    const enrollmentDb = getSupabaseClient('enrollment');
+    const { data, error } = await enrollmentDb
+      .from('class_enrollments')
+      .select(`id, enrollment_status, enrolled_at,
+        class_assignments!inner(id, section, schedule, room, subjects!inner(code, name, units))`)
+      .eq('student_id', id)
+      .eq('enrollment_status', 'enrolled')
+      .order('enrolled_at', { ascending: false });
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      status: row.enrollment_status,
+      enrolledAt: row.enrolled_at,
+      classAssignmentId: row.class_assignments?.id ?? null,
+      subjectCode: row.class_assignments?.subjects?.code ?? null,
+      subjectName: row.class_assignments?.subjects?.name ?? null,
+      units: row.class_assignments?.subjects?.units ?? 0,
+      section: row.class_assignments?.section ?? null,
+      schedule: row.class_assignments?.schedule ?? null,
+      room: row.class_assignments?.room ?? null,
+    }));
+  }
+
+  async getClassSchedule(id: string) {
+    const courses = await this.getEnrolledCourses(id);
+
+    return courses.map((course: any) => ({
+      id: course.classAssignmentId ?? course.id,
+      enrollmentId: course.id,
+      subjectCode: course.subjectCode,
+      subjectName: course.subjectName,
+      section: course.section,
+      schedule: course.schedule,
+      room: course.room,
+    }));
+  }
+
+  async getCurriculumProgress(id: string) {
+    const enrollmentDb = getSupabaseClient('enrollment');
+    const student = await this.findOne(id);
+    const program = (student as any).applicant_profiles?.program;
+
+    const [curriculumResult, enrolledCourses] = await Promise.all([
+      program
+        ? enrollmentDb
+            .from('curriculum')
+            .select('subject_id, subjects!inner(units)')
+            .eq('program', program)
+        : Promise.resolve({ data: [], error: null }),
+      this.getEnrolledCourses(id),
+    ]);
+
+    if (curriculumResult.error) {
+      throw new InternalServerErrorException(curriculumResult.error.message);
+    }
+
+    const requiredUnits = (curriculumResult.data ?? []).reduce(
+      (sum: number, row: any) => sum + Number(row.subjects?.units ?? 0),
+      0,
+    );
+    const completedUnits = enrolledCourses.reduce(
+      (sum: number, course: any) => sum + Number(course.units ?? 0),
+      0,
+    );
+
+    return {
+      studentId: id,
+      program: program ?? null,
+      requiredUnits,
+      completedUnits,
+      remainingUnits: Math.max(requiredUnits - completedUnits, 0),
+      completionPercent: requiredUnits ? Math.round((completedUnits / requiredUnits) * 100) : 0,
+    };
+  }
+
+  async getHoldsAndDeficiencies(id: string) {
+    const [holdsResult, deficienciesResult] = await Promise.all([
+      getSupabaseClient('student')
+        .from('student_holds')
+        .select('id, type, reason, status, created_at')
+        .eq('student_id', id)
+        .eq('status', 'active'),
+      getSupabaseClient('student')
+        .from('grades')
+        .select('id, final_grade, remarks, subjects!inner(code, title)')
+        .eq('student_id', id)
+        .in('remarks', ['Failed', 'Incomplete']),
+    ]);
+
+    if (holdsResult.error) throw new InternalServerErrorException(holdsResult.error.message);
+    if (deficienciesResult.error) throw new InternalServerErrorException(deficienciesResult.error.message);
+
+    return {
+      holds: (holdsResult.data ?? []).map((row: any) => ({
+        id: row.id,
+        type: row.type,
+        reason: row.reason,
+        status: row.status,
+        createdAt: row.created_at,
+      })),
+      deficiencies: (deficienciesResult.data ?? []).map((row: any) => ({
+        id: row.id,
+        subjectCode: row.subjects?.code ?? null,
+        subjectTitle: row.subjects?.title ?? null,
+        finalGrade: row.final_grade,
+        remarks: row.remarks,
+      })),
+    };
+  }
+
+  async getAnnouncements(id: string) {
+    const { data, error } = await getSupabaseClient('public')
+      .from('announcements')
+      .select('id, title, body, audience, created_at')
+      .or(`student_id.eq.${id},audience.eq.students,audience.eq.all`)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      audience: row.audience,
+      createdAt: row.created_at,
+    }));
+  }
+
   // â”€â”€â”€ Update Status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /**

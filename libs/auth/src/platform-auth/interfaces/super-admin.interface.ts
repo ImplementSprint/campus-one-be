@@ -27,7 +27,7 @@ export interface SignUpResponse {
 
 export interface LoginResponse {
   message: string;
-  user: { id: string; email: string; role: string };
+  user: { id: string; email: string; role: string; permissions?: string[]; activeInstitutionId?: string | null };
   session: AuthSession;
 }
 

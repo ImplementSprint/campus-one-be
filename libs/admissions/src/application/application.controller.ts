@@ -1,5 +1,12 @@
-﻿import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
-import { ApplicationService } from './application.service';
+﻿import { BadRequestException, Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import {
+  ADMISSIONS_WORKFLOW_STATUSES,
+  AdmissionsWorkflowStatus,
+  ApplicationService,
+} from './application.service';
+
+const VALID_DOCUMENT_STATUSES = ['approved', 'rejected', 'pending'] as const;
+type DocumentReviewStatus = (typeof VALID_DOCUMENT_STATUSES)[number];
 
 @Controller('application')
 export class ApplicationController {
@@ -32,6 +39,7 @@ export class ApplicationController {
 
   @Post('track')
   trackApplication(@Body() dto: { email: string; referenceNumber: string }) {
+    this.validateTrackingFields(dto?.email, dto?.referenceNumber);
     return this.applicationService.trackApplication(dto.email, dto.referenceNumber);
   }
 
@@ -72,11 +80,13 @@ export class ApplicationController {
 
   @Get('status')
   fetchApplicationStatus(@Query('email') email: string, @Query('referenceNumber') referenceNumber: string) {
+    this.validateTrackingFields(email, referenceNumber);
     return this.applicationService.fetchApplicationStatus(email, referenceNumber);
   }
 
   @Get('validate-access')
   validateApplicationAccess(@Query('email') email: string, @Query('referenceNumber') referenceNumber: string) {
+    this.validateTrackingFields(email, referenceNumber);
     return this.applicationService.validateApplicationAccess(email, referenceNumber);
   }
 
@@ -93,9 +103,26 @@ export class ApplicationController {
   @Put('admin/applications/:applicationId/status')
   updateAdminApplicationStatus(
     @Param('applicationId') applicationId: string,
-    @Body() dto: { status: 'Under Review' | 'Passed' | 'Not Accepted'; rejectionReason?: string },
+    @Body() dto: {
+      status: AdmissionsWorkflowStatus;
+      rejectionReason?: string;
+      remarks?: string;
+      actorEmail?: string;
+      acceptanceLetterUrl?: string;
+    },
   ) {
-    return this.applicationService.updateAdminApplicationStatus(applicationId, dto.status, dto.rejectionReason);
+    this.validateApplicationId(applicationId);
+    this.validateAdminStatus(dto?.status);
+    if ((dto.status === 'Not Accepted' || dto.status === 'Rejected') && !this.hasText(dto.rejectionReason)) {
+      throw new BadRequestException('rejectionReason is required when status is rejected');
+    }
+
+    return this.applicationService.updateAdminApplicationStatus(applicationId, dto.status, {
+      rejectionReason: dto.rejectionReason,
+      remarks: dto.remarks,
+      actorEmail: dto.actorEmail,
+      acceptanceLetterUrl: dto.acceptanceLetterUrl,
+    });
   }
 
   @Get('admin/stats')
@@ -108,7 +135,105 @@ export class ApplicationController {
     @Param('applicationId') applicationId: string,
     @Body() dto: { department: string; program: string },
   ) {
+    if (!this.hasText(applicationId) || !this.hasText(dto?.department) || !this.hasText(dto?.program)) {
+      throw new BadRequestException('applicationId, department, and program are required');
+    }
+
     return this.applicationService.updateAdminProgramSelection(applicationId, dto.department, dto.program);
+  }
+
+  @Put('admin/applications/:applicationId/documents/:documentId/verification')
+  verifyApplicantDocument(
+    @Param('applicationId') applicationId: string,
+    @Param('documentId') documentId: string,
+    @Body() dto: { status: DocumentReviewStatus; rejectionReason?: string; remarks?: string; actorEmail?: string },
+  ) {
+    this.validateApplicationId(applicationId);
+    if (!this.hasText(documentId)) {
+      throw new BadRequestException('documentId is required');
+    }
+    if (!VALID_DOCUMENT_STATUSES.includes(dto?.status as DocumentReviewStatus)) {
+      throw new BadRequestException('Invalid document status');
+    }
+    if (dto.status === 'rejected' && !this.hasText(dto.rejectionReason) && !this.hasText(dto.remarks)) {
+      throw new BadRequestException('rejectionReason or remarks is required when rejecting a document');
+    }
+    return this.applicationService.verifyApplicantDocument(applicationId, documentId, dto.status, {
+      rejectionReason: dto.rejectionReason,
+      remarks: dto.remarks,
+      actorEmail: dto.actorEmail,
+    });
+  }
+
+  @Put('admin/applications/:applicationId/missing-requirements')
+  recordMissingRequirements(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: { requirements: string[]; remarks?: string; actorEmail?: string },
+  ) {
+    this.validateApplicationId(applicationId);
+    if (!Array.isArray(dto?.requirements) || dto.requirements.every((requirement) => !this.hasText(requirement))) {
+      throw new BadRequestException('At least one missing requirement is required');
+    }
+    return this.applicationService.recordMissingRequirements(
+      applicationId,
+      dto.requirements.filter((requirement) => this.hasText(requirement)),
+      { remarks: dto.remarks, actorEmail: dto.actorEmail },
+    );
+  }
+
+  @Put('admin/applications/:applicationId/entrance-exam')
+  scheduleEntranceExam(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: { examDate: string; examTime: string; examVenue: string; permitNumber?: string; actorEmail?: string },
+  ) {
+    this.validateApplicationId(applicationId);
+    if (!this.hasText(dto?.examDate) || !this.hasText(dto?.examTime) || !this.hasText(dto?.examVenue)) {
+      throw new BadRequestException('examDate, examTime, and examVenue are required');
+    }
+    return this.applicationService.scheduleEntranceExam(applicationId, dto);
+  }
+
+  @Put('admin/applications/:applicationId/interview')
+  scheduleInterview(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: { interviewDate: string; interviewTime: string; interviewVenue: string; actorEmail?: string },
+  ) {
+    this.validateApplicationId(applicationId);
+    if (!this.hasText(dto?.interviewDate) || !this.hasText(dto?.interviewTime) || !this.hasText(dto?.interviewVenue)) {
+      throw new BadRequestException('interviewDate, interviewTime, and interviewVenue are required');
+    }
+    return this.applicationService.scheduleInterview(applicationId, dto);
+  }
+
+  @Post('admin/applications/:applicationId/convert-to-student')
+  convertAcceptedApplicantToStudent(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: { actorEmail?: string; remarks?: string } = {},
+  ) {
+    this.validateApplicationId(applicationId);
+    return this.applicationService.convertAcceptedApplicantToStudent(applicationId, dto);
+  }
+
+  private validateTrackingFields(email?: string, referenceNumber?: string) {
+    if (!this.hasText(email) || !this.hasText(referenceNumber)) {
+      throw new BadRequestException('Email and referenceNumber are required');
+    }
+  }
+
+  private validateApplicationId(applicationId?: string) {
+    if (!this.hasText(applicationId)) {
+      throw new BadRequestException('applicationId is required');
+    }
+  }
+
+  private validateAdminStatus(status?: string) {
+    if (!ADMISSIONS_WORKFLOW_STATUSES.includes(status as AdmissionsWorkflowStatus)) {
+      throw new BadRequestException('Invalid application status');
+    }
+  }
+
+  private hasText(value?: string) {
+    return typeof value === 'string' && value.trim().length > 0;
   }
 }
 

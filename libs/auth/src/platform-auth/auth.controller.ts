@@ -1,4 +1,13 @@
-﻿import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignUpDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -30,6 +39,14 @@ export class AuthController {
   signOut() {
     return this.authService.signOut();
   }
+
+  @Get('me')
+  @HttpCode(HttpStatus.OK)
+  async me(@Headers('authorization') authorization?: string) {
+    const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!token) throw new UnauthorizedException('Bearer token is required.');
+
+    const user = await this.authService.verifyAccessToken(token);
+    return { user };
+  }
 }
-
-

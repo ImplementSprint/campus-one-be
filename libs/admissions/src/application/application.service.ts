@@ -3,6 +3,19 @@ import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 type ServiceResponse<T> = { data: T | null; error: { message: string; code?: string } | null };
+export const ADMISSIONS_WORKFLOW_STATUSES = [
+  'Under Review',
+  'Missing Requirements',
+  'For Exam',
+  'For Interview',
+  'Accepted',
+  'Rejected',
+  'Waitlisted',
+  'Passed',
+  'Not Accepted',
+] as const;
+export type AdmissionsWorkflowStatus = (typeof ADMISSIONS_WORKFLOW_STATUSES)[number];
+type WorkflowActor = { actorEmail?: string; remarks?: string };
 
 @Injectable()
 export class ApplicationService {
@@ -12,6 +25,7 @@ export class ApplicationService {
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
   private readonly db = this.supabase.schema('applicant');
+  private readonly studentDb = this.supabase.schema('public');
 
   getHello(): string {
     return 'Application service is running.';
@@ -290,28 +304,191 @@ export class ApplicationService {
     };
   }
 
+  async verifyApplicantDocument(
+    applicationId: string,
+    documentId: string,
+    status: 'approved' | 'rejected' | 'pending',
+    options: WorkflowActor & { rejectionReason?: string } = {},
+  ): Promise<ServiceResponse<{ success: boolean }>> {
+    const { error } = await this.db
+      .from('applicant_documents')
+      .update({
+        status,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: options.actorEmail ?? null,
+        rejection_reason: status === 'rejected' ? options.rejectionReason ?? options.remarks ?? null : null,
+      })
+      .eq('id', documentId)
+      .eq('applicant_id', applicationId);
+
+    if (error) return { data: null, error: { message: error.message } };
+    await this.recordAdmissionAudit('document_reviewed', applicationId, options, { documentId, status });
+    return { data: { success: true }, error: null };
+  }
+
+  async recordMissingRequirements(
+    applicationId: string,
+    requirements: string[],
+    options: WorkflowActor = {},
+  ): Promise<ServiceResponse<{ success: boolean }>> {
+    const { error } = await this.db
+      .from('applicant_profiles')
+      .update({
+        status: 'Missing Requirements',
+        rejection_reason: requirements.join('; '),
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('id', applicationId);
+
+    if (error) return { data: null, error: { message: error.message } };
+    await this.recordAdmissionAudit('missing_requirements_recorded', applicationId, options, { requirements });
+    return { data: { success: true }, error: null };
+  }
+
+  async scheduleEntranceExam(
+    applicationId: string,
+    schedule: WorkflowActor & {
+      examDate: string;
+      examTime: string;
+      examVenue: string;
+      permitNumber?: string;
+    },
+  ): Promise<ServiceResponse<{ success: boolean }>> {
+    const { error } = await this.db
+      .from('admissions_results')
+      .upsert(
+        {
+          applicant_id: applicationId,
+          status: 'For Exam',
+          exam_date: schedule.examDate,
+          exam_time: schedule.examTime,
+          exam_venue: schedule.examVenue,
+          permit_number: schedule.permitNumber ?? null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'applicant_id' },
+      );
+
+    if (error) return { data: null, error: { message: error.message } };
+    const statusResult = await this.updateApplicantWorkflowStatus(applicationId, 'For Exam');
+    if (statusResult.error) return statusResult;
+    await this.recordAdmissionAudit('entrance_exam_scheduled', applicationId, schedule, {
+      examDate: schedule.examDate,
+      examTime: schedule.examTime,
+      examVenue: schedule.examVenue,
+      permitNumber: schedule.permitNumber ?? null,
+    });
+    return { data: { success: true }, error: null };
+  }
+
+  async scheduleInterview(
+    applicationId: string,
+    schedule: WorkflowActor & {
+      interviewDate: string;
+      interviewTime: string;
+      interviewVenue: string;
+    },
+  ): Promise<ServiceResponse<{ success: boolean }>> {
+    const statusResult = await this.updateApplicantWorkflowStatus(applicationId, 'For Interview', {
+      interviewDate: schedule.interviewDate,
+      interviewTime: schedule.interviewTime,
+      interviewVenue: schedule.interviewVenue,
+    });
+    if (statusResult.error) return statusResult;
+    await this.recordAdmissionAudit('interview_scheduled', applicationId, schedule, {
+      interviewDate: schedule.interviewDate,
+      interviewTime: schedule.interviewTime,
+      interviewVenue: schedule.interviewVenue,
+    });
+    return { data: { success: true }, error: null };
+  }
+
   async updateAdminApplicationStatus(
     applicationId: string,
-    status: 'Under Review' | 'Passed' | 'Not Accepted',
-    rejectionReason?: string,
+    status: AdmissionsWorkflowStatus,
+    options?: string | (WorkflowActor & { rejectionReason?: string; acceptanceLetterUrl?: string }),
   ): Promise<ServiceResponse<{ success: boolean }>> {
+    const normalizedOptions = typeof options === 'string' ? { rejectionReason: options } : options ?? {};
     const updateData: Record<string, unknown> = {
       status,
       reviewed_at: new Date().toISOString(),
     };
 
-    if (status === 'Passed') {
+    if (status === 'Passed' || status === 'Accepted') {
       const { data: appNumber } = await this.db.rpc('generate_applicant_number');
       updateData.applicant_number = appNumber;
     }
 
-    if (status === 'Not Accepted' && rejectionReason) {
-      updateData.rejection_reason = rejectionReason;
+    if ((status === 'Not Accepted' || status === 'Rejected') && normalizedOptions.rejectionReason) {
+      updateData.rejection_reason = normalizedOptions.rejectionReason;
     }
 
     const { error } = await this.db.from('applicant_profiles').update(updateData).eq('id', applicationId);
     if (error) return { data: null, error: { message: error.message } };
+    if (normalizedOptions.acceptanceLetterUrl) {
+      const { error: resultError } = await this.db
+        .from('admissions_results')
+        .upsert(
+          {
+            applicant_id: applicationId,
+            status,
+            noa_url: normalizedOptions.acceptanceLetterUrl,
+            date_issued: new Date().toISOString().slice(0, 10),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'applicant_id' },
+        );
+      if (resultError) return { data: null, error: { message: resultError.message } };
+    }
+
+    await this.recordAdmissionAudit('status_changed', applicationId, normalizedOptions, {
+      status,
+      rejectionReason: normalizedOptions.rejectionReason ?? null,
+      acceptanceLetterUrl: normalizedOptions.acceptanceLetterUrl ?? null,
+    });
     return { data: { success: true }, error: null };
+  }
+
+  async convertAcceptedApplicantToStudent(
+    applicationId: string,
+    options: WorkflowActor = {},
+  ): Promise<ServiceResponse<{ student_number: string }>> {
+    const { data: applicant, error: applicantError } = await this.db
+      .from('applicant_profiles')
+      .select('id, email, full_name, applicant_number, status')
+      .eq('id', applicationId)
+      .single();
+
+    if (applicantError || !applicant) {
+      return { data: null, error: { message: applicantError?.message ?? 'Application not found' } };
+    }
+
+    const studentNumber = applicant.applicant_number || (await this.db.rpc('generate_applicant_number')).data;
+    const { data: student, error: studentError } = await this.studentDb
+      .from('student_accounts')
+      .insert({
+        applicant_id: applicationId,
+        student_number: studentNumber,
+        email: applicant.email,
+        password_hash: 'pending-password-setup',
+        enrollment_status: 'active',
+        is_active: true,
+      })
+      .select('student_number')
+      .single();
+
+    if (studentError) return { data: null, error: { message: studentError.message } };
+
+    const { error: updateError } = await this.db
+      .from('applicant_profiles')
+      .update({ is_enrolled: true, enrolled_at: new Date().toISOString() })
+      .eq('id', applicationId);
+    if (updateError) return { data: null, error: { message: updateError.message } };
+
+    await this.recordAdmissionAudit('applicant_converted_to_student', applicationId, options, {
+      studentNumber: student?.student_number ?? studentNumber,
+    });
+    return { data: { student_number: student?.student_number ?? studentNumber }, error: null };
   }
 
   async fetchAdminDashboardStats(): Promise<ServiceResponse<{ total: number; pending: number; accepted: number; rejected: number }>> {
@@ -326,8 +503,8 @@ export class ApplicationService {
       data: {
         total: rows.length,
         pending: rows.filter((app: any) => app.status === 'Under Review').length,
-        accepted: rows.filter((app: any) => app.status === 'Passed').length,
-        rejected: rows.filter((app: any) => app.status === 'Not Accepted').length,
+        accepted: rows.filter((app: any) => app.status === 'Passed' || app.status === 'Accepted').length,
+        rejected: rows.filter((app: any) => app.status === 'Not Accepted' || app.status === 'Rejected').length,
       },
       error: null,
     };
@@ -347,6 +524,42 @@ export class ApplicationService {
       .eq('applicant_id', applicationId);
     if (error) return { data: null, error: { message: error.message } };
     return { data: { success: true }, error: null };
+  }
+
+  private async updateApplicantWorkflowStatus(
+    applicationId: string,
+    status: AdmissionsWorkflowStatus,
+    metadata: Record<string, unknown> = {},
+  ): Promise<ServiceResponse<{ success: boolean }>> {
+    const { error } = await this.db
+      .from('applicant_profiles')
+      .update({
+        status,
+        reviewed_at: new Date().toISOString(),
+        ...(metadata.interviewDate ? { rejection_reason: JSON.stringify(metadata) } : {}),
+      })
+      .eq('id', applicationId);
+    if (error) return { data: null, error: { message: error.message } };
+    return { data: { success: true }, error: null };
+  }
+
+  private async recordAdmissionAudit(
+    eventType: string,
+    applicationId: string,
+    options: WorkflowActor,
+    metadata: Record<string, unknown>,
+  ) {
+    await this.db.from('admissions_activity_logs').insert({
+      event_type: eventType,
+      applicant_type: 'New Student',
+      school_level: 'College',
+      metadata: {
+        applicant_id: applicationId,
+        actor_email: options.actorEmail ?? null,
+        remarks: options.remarks ?? null,
+        ...metadata,
+      },
+    });
   }
 }
 

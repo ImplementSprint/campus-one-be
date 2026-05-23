@@ -57,6 +57,7 @@ export interface IAlumniCardApplication {
   delivery_method: 'pickup' | 'delivery';
   id_photo_url?: string;
   payment_status: PaymentStatus;
+  card_serial?: string;
 }
 
 /** Mirrors alumni.alumni */

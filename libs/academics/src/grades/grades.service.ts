@@ -1,8 +1,92 @@
-﻿import { Injectable } from '@nestjs/common';
+﻿import { ForbiddenException, Injectable } from '@nestjs/common';
 import { supabase } from '@campus-one/database/supabase';
+import { NotificationsService } from '../../../notifications/src/notifications.service';
 
 @Injectable()
 export class GradesService {
+  private readonly notifications = new NotificationsService();
+
+  async getProfessorGradebook(professorId: string, classAssignmentId: string) {
+    const db = supabase.schema('public');
+    const { data, error } = await db.from('class_enrollments')
+      .select(`
+        id,
+        student_id,
+        class_assignments!inner(professor_id),
+        student_accounts!inner(id, student_number, applicant_id),
+        grades(prelim_grade, midterm_grade, finals_grade, final_grade, letter_grade, remarks, is_locked)
+      `)
+      .eq('class_assignment_id', classAssignmentId)
+      .eq('class_assignments.professor_id', professorId)
+      .eq('enrollment_status', 'enrolled')
+      .order('enrolled_at');
+    if (error) throw new Error(error.message);
+
+    return {
+      professorId,
+      classAssignmentId,
+      students: (data || []).map((row: any) => ({
+        enrollmentId: row.id,
+        studentId: row.student_id,
+        studentNumber: row.student_accounts?.student_number ?? null,
+        applicantId: row.student_accounts?.applicant_id ?? null,
+        grade: Array.isArray(row.grades) ? row.grades[0] ?? null : row.grades ?? null,
+      })),
+    };
+  }
+
+  async saveProfessorGrade(payload: any) {
+    await this.assertEnrollmentBelongsToProfessor(payload.professorId, payload.enrollmentId);
+
+    const db = supabase.schema('public');
+    const { data, error } = await db.from('grades')
+      .upsert(toGradeRow(payload), { onConflict: 'enrollment_id' })
+      .select('id, enrollment_id, professor_id, prelim_grade, midterm_grade, finals_grade, final_grade, letter_grade, remarks, is_locked')
+      .single();
+    if (error) throw new Error(error.message);
+
+    return { success: true, status: 'saved', grade: data };
+  }
+
+  async submitProfessorGrade(payload: any) {
+    await this.assertEnrollmentBelongsToProfessor(payload.professorId, payload.enrollmentId);
+
+    const db = supabase.schema('public');
+    const { data, error } = await db.from('grades')
+      .upsert({
+        ...toGradeRow(payload),
+        is_locked: true,
+        encoded_at: new Date().toISOString(),
+      }, { onConflict: 'enrollment_id' })
+      .select('id, enrollment_id, professor_id, final_grade, letter_grade, remarks, is_locked')
+      .single();
+    if (error) throw new Error(error.message);
+
+    await this.notifications.tryCreate({
+      profileId: payload.enrollmentId,
+      title: 'Grade submitted',
+      body: `Final grade ${payload.finalGrade} (${payload.letterGrade}) has been submitted.`,
+      metadata: {
+        action: 'grade.submitted',
+        professorId: payload.professorId,
+        enrollmentId: payload.enrollmentId,
+      },
+    });
+
+    return {
+      success: true,
+      status: 'submitted',
+      grade: data,
+      notification: {
+        type: 'grade_submitted',
+        professorId: payload.professorId,
+        enrollmentId: payload.enrollmentId,
+        title: 'Grade submitted',
+        body: `Final grade ${payload.finalGrade} (${payload.letterGrade}) has been submitted.`,
+      },
+    };
+  }
+
   async getGrades(userId: string) {
     const applicationDb = supabase.schema('applicant');
     const studentDb = supabase.schema('student');
@@ -28,6 +112,27 @@ export class GradesService {
     const nums = grades.map(g => parseFloat(g.grade)).filter(g => !isNaN(g));
     const gwa = nums.length > 0 ? (nums.reduce((s, g) => s + g, 0) / nums.length).toFixed(2) : '0.00';
     return { studentName, program, grades, totalUnits, gwa };
+  }
+
+  async getSummary(userId: string) {
+    const gradeReport = await this.getGrades(userId);
+
+    return {
+      studentName: gradeReport.studentName,
+      program: gradeReport.program,
+      ...summarizeGrades(gradeReport.grades),
+    };
+  }
+
+  async getTermSummary(userId: string, term: string) {
+    const gradeReport = await this.getGrades(userId);
+
+    return {
+      studentName: gradeReport.studentName,
+      program: gradeReport.program,
+      term,
+      ...summarizeGrades(gradeReport.grades.filter((grade: any) => grade.term === term || !grade.term)),
+    };
   }
 
   async getDeficiencies(userId: string) {
@@ -69,6 +174,64 @@ export class GradesService {
       })),
     };
   }
+
+  private async assertEnrollmentBelongsToProfessor(professorId: string, enrollmentId: string) {
+    const db = supabase.schema('public');
+    const { data, error } = await db.from('class_enrollments')
+      .select('id, class_assignments!inner(professor_id)')
+      .eq('id', enrollmentId)
+      .eq('class_assignments.professor_id', professorId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) throw new ForbiddenException('Professor is not assigned to this enrollment.');
+  }
 }
 
+function toGradeRow(payload: any) {
+  return {
+    enrollment_id: payload.enrollmentId,
+    professor_id: payload.professorId,
+    prelim_grade: payload.prelimGrade ?? null,
+    midterm_grade: payload.midtermGrade ?? null,
+    finals_grade: payload.finalsGrade ?? null,
+    final_grade: payload.finalGrade ?? null,
+    letter_grade: payload.letterGrade ?? null,
+    remarks: payload.remarks ?? null,
+    encoded_by: payload.professorId,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export function summarizeGrades(grades: Array<{ units: number; grade: string; remarks?: string }>) {
+  const totalUnits = grades.reduce((sum, grade) => sum + Number(grade.units ?? 0), 0);
+  const numericGrades = grades
+    .map((grade) => ({
+      units: Number(grade.units ?? 0),
+      value: Number.parseFloat(grade.grade),
+      remarks: grade.remarks,
+    }))
+    .filter((grade) => Number.isFinite(grade.value));
+  const gradedUnits = numericGrades.reduce((sum, grade) => sum + grade.units, 0);
+  const weightedTotal = numericGrades.reduce((sum, grade) => sum + grade.value * grade.units, 0);
+  const failedUnits = numericGrades
+    .filter((grade) => grade.value >= 5 || grade.remarks === 'Failed')
+    .reduce((sum, grade) => sum + grade.units, 0);
+  const passedUnits = Math.max(gradedUnits - failedUnits, 0);
+
+  return {
+    totalUnits,
+    gradedUnits,
+    passedUnits,
+    failedUnits,
+    gwa: gradedUnits ? (weightedTotal / gradedUnits).toFixed(2) : '0.00',
+    status: getAcademicStanding(grades.length, failedUnits),
+  };
+}
+
+function getAcademicStanding(totalGradeRows: number, failedUnits: number) {
+  if (!totalGradeRows) return 'no_grades';
+  if (failedUnits > 0) return 'has_deficiencies';
+  return 'good_standing';
+}
 

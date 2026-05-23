@@ -5,14 +5,16 @@
   "description": "Campus One centralized NestJS backend monorepo",
   "scripts": {
     "start": "node dist/apps/gateway/src/main.js",
-    "build": "tsc -p tsconfig.json",
-    "test": "ts-node -r tsconfig-paths/register libs/tenants/src/tenant-resolution.middleware.test.ts && ts-node -r tsconfig-paths/register libs/tenants/src/public-school.service.test.ts",
+    "build": "tsc -p tsconfig.json && node scripts/prepare-runtime-aliases.mjs",
+    "test": "ts-node -r tsconfig-paths/register libs/tenants/src/tenant-resolution.middleware.test.ts && ts-node -r tsconfig-paths/register libs/tenants/src/public-school.service.test.ts && ts-node -r tsconfig-paths/register libs/tenants/src/tenant-current.controller.test.ts && ts-node -r tsconfig-paths/register libs/tenants/src/platform-school-onboarding.service.test.ts && ts-node -r tsconfig-paths/register libs/auth/src/platform-auth/auth.service.test.ts && ts-node -r tsconfig-paths/register libs/auth/src/platform-auth/auth.controller.test.ts && ts-node -r tsconfig-paths/register libs/auth/src/platform-auth/route-authorization.test.ts && ts-node -r tsconfig-paths/register libs/audit/src/audit.service.test.ts && ts-node -r tsconfig-paths/register libs/audit/src/audit.controller.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/profile/profile.controller.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/dashboard/dashboard.controller.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/student/student.controller.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/enrollment/enrollment.controller.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/enrollment/enrollment.rules.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/enrollment/enrollment.service.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/grades/grades.controller.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/grades/grades.summary.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/grades/grades.service.test.ts && ts-node -r tsconfig-paths/register libs/academics/src/professor/professor.controller.test.ts && ts-node -r tsconfig-paths/register libs/billing/src/billing.controller.test.ts && ts-node -r tsconfig-paths/register libs/alumni/src/alumni/alumni.controller.test.ts && ts-node -r tsconfig-paths/register libs/alumni/src/alumni/alumni.service.test.ts && ts-node -r tsconfig-paths/register libs/notifications/src/notifications.controller.test.ts && ts-node -r tsconfig-paths/register libs/school-admin/src/school-admin.service.test.ts && ts-node -r tsconfig-paths/register libs/school-admin/src/school-admin.controller.test.ts && ts-node -r tsconfig-paths/register libs/admissions/src/application/application.controller.test.ts && ts-node -r tsconfig-paths/register libs/admissions/src/application/application.service.test.ts",
     "contracts:generate": "node scripts/generate-contract-artifacts.mjs",
     "contracts:check": "node scripts/generate-contract-artifacts.mjs --check",
     "smoke:gateway": "ts-node -r tsconfig-paths/register scripts/smoke-gateway.ts",
+    "smoke:core": "ts-node -r tsconfig-paths/register scripts/smoke-core-flows.ts",
+    "security:routes": "ts-node -r tsconfig-paths/register scripts/route-security-matrix.ts",
     "dev": "ts-node -r tsconfig-paths/register apps/gateway/src/main.ts",
     "start:dev": "npm run dev",
-    "verify": "npm run contracts:check && npm test && npm run build && npm run smoke:gateway"
+    "verify": "npm run contracts:check && npm test && npm run build && npm run smoke:gateway && npm run smoke:core && npm run security:routes"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.19",
@@ -25,6 +27,7 @@
     "dotenv": "^16.0.0",
     "file-type": "^22.0.1",
     "kafkajs": "^2.2.4",
+    "pg": "^8.21.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.0",
     "undici": "^8.3.0"

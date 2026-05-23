@@ -1,4 +1,5 @@
 ﻿import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -6,6 +7,8 @@
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { getSupabaseClient } from './config/supabase.config';
+import { NotificationsService } from '../../../notifications/src/notifications.service';
+import { AuditService } from '../../../audit/src/audit.service';
 import { RegisterAlumniDto } from './dto/register-alumni.dto';
 import { RequestRecordDto } from './dto/request-record.dto';
 import { CardApplicationDto } from './dto/card-application.dto';
@@ -38,6 +41,27 @@ const FEE_MAP: Record<DocumentType, number> = {
 @Injectable()
 export class AlumniService {
   private readonly logger = new Logger(AlumniService.name);
+  private readonly notifications = new NotificationsService();
+  private readonly audit = new AuditService();
+
+  calculateRecordFee(document_type: DocumentType, number_of_copies = 1) {
+    if (!Object.values(DocumentType).includes(document_type)) {
+      throw new BadRequestException('Invalid document type');
+    }
+    if (!Number.isInteger(number_of_copies) || number_of_copies < 1) {
+      throw new BadRequestException('Number of copies must be at least 1');
+    }
+
+    const unit_amount = FEE_MAP[document_type];
+    return {
+      document_type,
+      number_of_copies,
+      unit_amount,
+      total_amount: unit_amount * number_of_copies,
+      currency: 'PHP',
+      payment_mode: 'manual',
+    };
+  }
 
   /**
    * POST /alumni/register
@@ -49,6 +73,8 @@ export class AlumniService {
    * Rule: Writes to log table FIRST. No FK. actor_uuid is plain text.
    */
   async registerAlumni(dto: RegisterAlumniDto): Promise<IAlumni> {
+    this.validateRegistrationVerification(dto);
+
     const supabase = getSupabaseClient();
     const log_id = randomUUID();
     const full_name = [dto.first_name, dto.middle_name, dto.last_name]
@@ -154,6 +180,8 @@ export class AlumniService {
   async requestRecord(dto: RequestRecordDto): Promise<IAlumniRecordRequest> {
     const supabase = getSupabaseClient();
     const log_id = randomUUID();
+    const numberOfCopies = dto.number_of_copies ?? 1;
+    const fee = this.calculateRecordFee(dto.document_type, numberOfCopies);
 
     const payload: IAlumniRecordRequest = {
       log_id,
@@ -163,11 +191,11 @@ export class AlumniService {
       status_code: 100,
       tenant_id: dto.tenant_id,
       document_type: dto.document_type,
-      fee_amount: FEE_MAP[dto.document_type],
+      fee_amount: fee.total_amount,
       payment_status: PaymentStatus.PENDING,
       notes: dto.notes,
       delivery_method: dto.delivery_method,
-      number_of_copies: dto.number_of_copies,
+      number_of_copies: numberOfCopies,
     };
 
     const { data, error } = await supabase
@@ -186,7 +214,28 @@ export class AlumniService {
       `Record requested â€” doc: ${dto.document_type}, actor_uuid: ${dto.actor_uuid}`,
     );
 
-    return data as IAlumniRecordRequest;
+    await this.notifications.tryCreate({
+      profileId: dto.actor_uuid,
+      title: 'Document request submitted',
+      body: `${dto.document_type} request is now queued for review.`,
+      metadata: {
+        action: 'alumni.record.requested',
+        actor_uuid: dto.actor_uuid,
+        tenant_id: dto.tenant_id,
+        log_id,
+      },
+    });
+
+    return {
+      ...(data as IAlumniRecordRequest),
+      notification: {
+        type: 'alumni_record_requested',
+        actor_uuid: dto.actor_uuid,
+        tenant_id: dto.tenant_id,
+        title: 'Document request submitted',
+        body: `${dto.document_type} request is now queued for review.`,
+      },
+    } as IAlumniRecordRequest & { notification: Record<string, string> };
   }
 
   /**
@@ -216,6 +265,10 @@ export class AlumniService {
    * Submits an ID card application.
    */
   async applyForCard(dto: CardApplicationDto): Promise<IAlumniCardApplication> {
+    if (!dto.id_photo_url?.trim()) {
+      throw new BadRequestException('ID photo URL is required for alumni card applications');
+    }
+
     const supabase = getSupabaseClient();
     const log_id = randomUUID();
 
@@ -270,6 +323,23 @@ export class AlumniService {
     return (data ?? []) as IAlumniCardApplication[];
   }
 
+  async getAllCardApplications(): Promise<IAlumniCardApplication[]> {
+    const supabase = getSupabaseClient();
+
+    const { data, error } = await supabase
+      .schema(SCHEMA)
+      .from(TABLE_CARDS)
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      this.logger.error('getAllCardApplications failed', error.message);
+      throw new InternalServerErrorException(error.message);
+    }
+
+    return (data ?? []) as IAlumniCardApplication[];
+  }
+
   // â”€â”€â”€ Admin endpoints (read all, not scoped to one user) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** GET /alumni/admin/registry â€” all registration logs */
@@ -297,17 +367,152 @@ export class AlumniService {
   }
 
   /** PATCH /alumni/admin/requests/:log_id â€” update status_code of a request */
-  async updateRecordStatus(log_id: string, status_code: number): Promise<IAlumniRecordRequest> {
+  async updateRecordStatus(
+    log_id: string,
+    status_code: number,
+    payment_status?: PaymentStatus | 'pending' | 'paid',
+  ): Promise<IAlumniRecordRequest & { notification: Record<string, string> }> {
     const supabase = getSupabaseClient();
+    const updates: Record<string, unknown> = { status_code };
+    if (payment_status) updates.payment_status = payment_status;
+
     const { data, error } = await supabase
       .schema(SCHEMA)
       .from(TABLE_RECORDS)
-      .update({ status_code })
+      .update(updates)
       .eq('log_id', log_id)
       .select()
       .single();
     if (error) throw new InternalServerErrorException(error.message);
-    return data as IAlumniRecordRequest;
+    const record = data as IAlumniRecordRequest;
+    await this.audit.record({
+      action: 'alumni.record.status_updated',
+      actor: record.actor_uuid,
+      tenantId: record.tenant_id,
+      target: log_id,
+      metadata: { status_code, payment_status },
+    });
+    await this.notifications.tryCreate({
+      profileId: record.actor_uuid,
+      title: 'Document request updated',
+      body: `Request ${log_id} status is now ${status_code}.`,
+      metadata: {
+        action: 'alumni.record.status_updated',
+        actor_uuid: record.actor_uuid,
+        tenant_id: record.tenant_id,
+        log_id,
+        status_code,
+        payment_status,
+      },
+    });
+
+    return {
+      ...record,
+      notification: {
+        type: 'alumni_request_status_updated',
+        actor_uuid: record.actor_uuid,
+        tenant_id: record.tenant_id,
+        title: 'Document request updated',
+        body: `Request ${log_id} status is now ${status_code}.`,
+      },
+    };
+  }
+
+  async updateCardApplicationStatus(
+    log_id: string,
+    status_code: number,
+    payment_status?: PaymentStatus | 'pending' | 'paid',
+  ): Promise<IAlumniCardApplication & { notification: Record<string, string> }> {
+    const supabase = getSupabaseClient();
+    const updates: Record<string, unknown> = { status_code };
+    if (payment_status) updates.payment_status = payment_status;
+    if (status_code >= 300) updates.card_serial = `CARD-${String(log_id).slice(0, 8).toUpperCase()}`;
+
+    const { data, error } = await supabase
+      .schema(SCHEMA)
+      .from(TABLE_CARDS)
+      .update(updates)
+      .eq('log_id', log_id)
+      .select()
+      .single();
+    if (error) throw new InternalServerErrorException(error.message);
+
+    const card = data as IAlumniCardApplication;
+    await this.notifications.tryCreate({
+      profileId: card.actor_uuid,
+      title: 'Alumni card request updated',
+      body: `Card request ${log_id} status is now ${status_code}.`,
+      metadata: {
+        action: 'alumni.card.status_updated',
+        actor_uuid: card.actor_uuid,
+        tenant_id: card.tenant_id,
+        log_id,
+        status_code,
+        payment_status,
+      },
+    });
+    await this.audit.record({
+      action: 'alumni.card.status_updated',
+      actor: card.actor_uuid,
+      tenantId: card.tenant_id,
+      target: log_id,
+      metadata: { status_code, payment_status },
+    });
+
+    return {
+      ...card,
+      notification: {
+        type: 'alumni_card_status_updated',
+        actor_uuid: card.actor_uuid,
+        tenant_id: card.tenant_id,
+        title: 'Alumni card request updated',
+        body: `Card request ${log_id} status is now ${status_code}.`,
+      },
+    };
+  }
+
+  async getCommunicationLog(actor_uuid: string) {
+    const supabase = getSupabaseClient();
+    const [registration, records, cards] = await Promise.all([
+      supabase
+        .schema(SCHEMA)
+        .from(TABLE_REG_LOGS)
+        .select('*')
+        .eq('actor_uuid', actor_uuid)
+        .order('created_at', { ascending: false }),
+      supabase
+        .schema(SCHEMA)
+        .from(TABLE_RECORDS)
+        .select('*')
+        .eq('actor_uuid', actor_uuid)
+        .order('created_at', { ascending: false }),
+      supabase
+        .schema(SCHEMA)
+        .from(TABLE_CARDS)
+        .select('*')
+        .eq('actor_uuid', actor_uuid)
+        .order('created_at', { ascending: false }),
+    ]);
+
+    const failed = [registration, records, cards].find((result) => result.error);
+    if (failed?.error) {
+      throw new InternalServerErrorException(failed.error.message);
+    }
+
+    return [
+      ...((registration.data ?? []) as Record<string, unknown>[]).map((item) => ({
+        ...item,
+        source: 'registration',
+      })),
+      ...((records.data ?? []) as Record<string, unknown>[]).map((item) => ({
+        ...item,
+        source: 'record_request',
+      })),
+      ...((cards.data ?? []) as Record<string, unknown>[]).map((item) => ({
+        ...item,
+        source: 'card_application',
+      })),
+    ];
   }
 
   /**
@@ -369,6 +574,19 @@ export class AlumniService {
       this.logger.warn(
         `graduation account upsert failed (log already written) â€” ${accountError.message}`,
       );
+    }
+  }
+
+  private validateRegistrationVerification(dto: RegisterAlumniDto) {
+    if (dto.is_legacy_registration) {
+      if (!dto.proof_reference?.trim() && !dto.document_url?.trim()) {
+        throw new BadRequestException('Proof reference or document URL is required for legacy alumni verification');
+      }
+      return;
+    }
+
+    if (!dto.student_id?.trim()) {
+      throw new BadRequestException('Student ID is required for alumni student-record verification');
     }
   }
 }
