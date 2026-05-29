@@ -61,6 +61,18 @@ deepEqual(localHostContext, {
   source: 'platform',
 });
 
+const podIpHealthContext = resolveTenantContext({
+  host: '10.104.0.170:4000',
+  path: '/api/health',
+});
+
+deepEqual(podIpHealthContext, {
+  institutionId: undefined,
+  schoolSlug: undefined,
+  isPlatformRoute: true,
+  source: 'platform',
+});
+
 const normalizedMobileContext = resolveTenantContext({
   schoolSlugHeader: ' San-Beda ',
 });

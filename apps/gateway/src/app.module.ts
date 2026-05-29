@@ -1,5 +1,6 @@
 ﻿import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
+import { DatabaseHealthController } from './database-health.controller';
 import { DatabaseHealthService } from './database-health.service';
 import { AuthModule as PlatformAuthModule } from '../../../libs/auth/src/platform-auth/auth.module';
 import { TenantsModule } from '../../../libs/tenants/src/tenants.module';
@@ -39,7 +40,7 @@ import { SchoolAdminModule } from '../../../libs/school-admin/src/school-admin.m
     AuditModule,
     SchoolAdminModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, DatabaseHealthController],
   providers: [DatabaseHealthService],
 })
 export class AppModule {}

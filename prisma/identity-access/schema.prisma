@@ -24,10 +24,33 @@ model TenantUserMembership {
 model PortalAccount {
   id        String   @id @db.Uuid
   email     String   @unique
+  passwordHash String?  @map("password_hash")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   @@map("portal_accounts")
+}
+
+model SuperAdmin {
+  id        String   @id @db.Uuid
+  email     String   @unique
+  role      String   @default("super_admin")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("super_admins")
+}
+
+model SchoolOwnerAccount {
+  id            String   @id @db.Uuid
+  institutionId String   @map("institution_id") @db.Uuid
+  email         String   @unique
+  role          String   @default("school_owner")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([institutionId], map: "school_owner_accounts_institution_idx")
+  @@map("school_owner_accounts")
 }
 
 model AdminUser {

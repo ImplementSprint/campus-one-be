@@ -7,4 +7,30 @@ datasource db {
   provider = "postgresql"
 }
 
-// Notifications and audit domain models will be added during the service migration.
+model InAppNotification {
+  id        String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  profileId String    @map("profile_id")
+  title     String
+  body      String?
+  isRead    Boolean   @default(false) @map("is_read")
+  metadata  Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+
+  @@index([profileId, createdAt], map: "in_app_notifications_profile_created_idx")
+  @@index([profileId, isRead], map: "in_app_notifications_profile_read_idx")
+  @@map("in_app_notifications")
+}
+
+model NotificationAuditEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  action    String
+  actor     String
+  tenantId  String?  @map("tenant_id") @db.Uuid
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, action], map: "notification_audit_events_tenant_action_idx")
+  @@index([actor, createdAt], map: "notification_audit_events_actor_created_idx")
+  @@map("notification_audit_events")
+}

@@ -73,6 +73,7 @@ class FakeApplicantStore {
       school_level: 'College',
       applicant_type: 'New Student',
       program: 'BS Information Technology',
+      mobile_number: '+639001112222',
     },
     student_accounts: {
       id: 'student-123',
@@ -133,6 +134,20 @@ function createService() {
 
 async function run() {
   const { service, store } = createService();
+  const notificationPayloads: unknown[] = [];
+  const eventCalls: unknown[] = [];
+  (service as any).notificationAdapter = {
+    async sendApplicantStatusUpdate(payload: unknown) {
+      notificationPayloads.push(payload);
+      return { queued: true };
+    },
+  };
+  (service as any).eventPublisher = {
+    publish(input: unknown) {
+      eventCalls.push(input);
+      return Promise.resolve({ envelope: input, published: true });
+    },
+  };
 
   const passedResult = await service.updateAdminApplicationStatus('application-1', 'Passed');
   deepEqual(passedResult, { data: { success: true }, error: null });
@@ -232,6 +247,215 @@ async function run() {
     'status_changed',
     'applicant_converted_to_student',
   ]);
+
+  deepEqual(notificationPayloads, [
+    {
+      applicationId: 'application-1',
+      status: 'Passed',
+      applicant: {
+        email: 'ana@example.edu',
+        mobileNumber: '+639001112222',
+        fullName: 'Ana Reyes',
+        referenceNumber: 'APP-2026-0001',
+      },
+      channels: ['email', 'sms'],
+      metadata: {
+        actorEmail: null,
+        remarks: null,
+        rejectionReason: null,
+        acceptanceLetterUrl: null,
+      },
+    },
+    {
+      applicationId: 'application-2',
+      status: 'Not Accepted',
+      applicant: {
+        email: 'ana@example.edu',
+        mobileNumber: '+639001112222',
+        fullName: 'Ana Reyes',
+        referenceNumber: 'APP-2026-0001',
+      },
+      channels: ['email', 'sms'],
+      metadata: {
+        actorEmail: null,
+        remarks: null,
+        rejectionReason: 'Incomplete requirements',
+        acceptanceLetterUrl: null,
+      },
+    },
+    {
+      applicationId: 'app-123',
+      status: 'Accepted',
+      applicant: {
+        email: 'ana@example.edu',
+        mobileNumber: '+639001112222',
+        fullName: 'Ana Reyes',
+        referenceNumber: 'APP-2026-0001',
+      },
+      channels: ['email', 'sms'],
+      metadata: {
+        actorEmail: 'admissions@example.edu',
+        remarks: null,
+        rejectionReason: null,
+        acceptanceLetterUrl: 'https://example.edu/noa/app-123.pdf',
+      },
+    },
+  ]);
+
+  deepEqual(eventCalls, [
+    {
+      eventType: 'admissions.status_changed',
+      tenantId: null,
+      actorId: null,
+      payload: {
+        applicationId: 'application-1',
+        status: 'Passed',
+        rejectionReason: null,
+        acceptanceLetterUrl: null,
+      },
+    },
+    {
+      eventType: 'admissions.status_changed',
+      tenantId: null,
+      actorId: null,
+      payload: {
+        applicationId: 'application-2',
+        status: 'Not Accepted',
+        rejectionReason: 'Incomplete requirements',
+        acceptanceLetterUrl: null,
+      },
+    },
+    {
+      eventType: 'admissions.status_changed',
+      tenantId: null,
+      actorId: 'admissions@example.edu',
+      payload: {
+        applicationId: 'app-123',
+        status: 'Accepted',
+        rejectionReason: null,
+        acceptanceLetterUrl: 'https://example.edu/noa/app-123.pdf',
+      },
+    },
+    {
+      eventType: 'admissions.applicant_converted',
+      tenantId: null,
+      actorId: 'admissions@example.edu',
+      payload: {
+        applicationId: 'app-123',
+        studentNumber: 'STU-2026-0001',
+      },
+    },
+  ]);
+
+  const fileStorageCalls: unknown[] = [];
+  (service as any).fileStorage = {
+    async uploadBase64(input: unknown) {
+      fileStorageCalls.push(input);
+      return {
+        bucket: 'applicant-documents',
+        path: 'school-1/applicant/app-123/20260525120000000-transcript.pdf',
+        tenantId: 'school-1',
+        ownerType: 'applicant',
+        ownerId: 'app-123',
+        fileName: 'transcript.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 9,
+        storageUrl: 'storage://applicant-documents/school-1/applicant/app-123/20260525120000000-transcript.pdf',
+      };
+    },
+  };
+  (service as any).supabase = {
+    storage: {
+      from: () => ({
+        upload: async () => ({ error: null }),
+        getPublicUrl: () => ({ data: { publicUrl: 'https://legacy-public-url.example/transcript.pdf' } }),
+      }),
+    },
+  };
+
+  const uploadedDocument = await (service as any).uploadApplicantDocument(
+    {
+      applicant_id: 'app-123',
+      document_name: 'Transcript',
+      file_name: 'transcript.pdf',
+      file_type: 'application/pdf',
+      file_base64: Buffer.from('pdf bytes').toString('base64'),
+      school_level: 'College',
+      applicant_type: 'New Student',
+    },
+    'school-1',
+  );
+  equal(uploadedDocument.error, null);
+  deepEqual(fileStorageCalls, [
+    {
+      bucket: 'applicantDocuments',
+      tenantId: 'school-1',
+      ownerType: 'applicant',
+      ownerId: 'app-123',
+      fileName: 'transcript.pdf',
+      contentType: 'application/pdf',
+      fileBase64: Buffer.from('pdf bytes').toString('base64'),
+    },
+  ]);
+
+  const documentInsert = store.records.find((record) => record.table === 'applicant_documents' && record.action === 'insert');
+  deepEqual(documentInsert?.payload, {
+    institution_id: 'school-1',
+    applicant_id: 'app-123',
+    document_name: 'Transcript',
+    file_name: 'transcript.pdf',
+    file_url: 'storage://applicant-documents/school-1/applicant/app-123/20260525120000000-transcript.pdf',
+    status: 'submitted',
+    school_level: 'College',
+    applicant_type: 'New Student',
+  });
+
+  const postgresCalls: Array<{ method: string; args: unknown[] }> = [];
+  const postgresBackedService = new ApplicationService() as any;
+  postgresBackedService.postgres = {
+    createApplicantProfile: (...args: unknown[]) => {
+      postgresCalls.push({ method: 'createApplicantProfile', args });
+      return Promise.resolve({ data: { id: 'pg-app-1' }, error: null });
+    },
+    submitApplication: (...args: unknown[]) => {
+      postgresCalls.push({ method: 'submitApplication', args });
+      return Promise.resolve({ data: { reference_number: 'APP-PG-1' }, error: null });
+    },
+    updateAdminApplicationStatus: (...args: unknown[]) => {
+      postgresCalls.push({ method: 'updateAdminApplicationStatus', args });
+      return Promise.resolve({ data: { success: true }, error: null });
+    },
+    convertAcceptedApplicantToStudent: (...args: unknown[]) => {
+      postgresCalls.push({ method: 'convertAcceptedApplicantToStudent', args });
+      return Promise.resolve({ data: { student_number: 'STU-PG-1' }, error: null });
+    },
+  };
+  const originalAdmissionsUrl = process.env.ADMISSIONS_DATABASE_URL;
+  const originalAcademicsUrl = process.env.ACADEMICS_DATABASE_URL;
+  process.env.ADMISSIONS_DATABASE_URL = 'postgresql://admissions';
+  process.env.ACADEMICS_DATABASE_URL = 'postgresql://academics';
+  try {
+    await postgresBackedService.createApplicantProfile({ email: 'pg@example.edu', school_level: 'College', applicant_type: 'New Student' }, 'school-pg');
+    await postgresBackedService.submitApplication('pg-app-1', 'school-pg');
+    await postgresBackedService.updateAdminApplicationStatus('pg-app-1', 'Accepted', { actorEmail: 'admissions@example.edu' }, 'school-pg');
+    await postgresBackedService.convertAcceptedApplicantToStudent('pg-app-1', { actorEmail: 'admissions@example.edu' }, 'school-pg');
+  } finally {
+    if (originalAdmissionsUrl == null) delete process.env.ADMISSIONS_DATABASE_URL;
+    else process.env.ADMISSIONS_DATABASE_URL = originalAdmissionsUrl;
+    if (originalAcademicsUrl == null) delete process.env.ACADEMICS_DATABASE_URL;
+    else process.env.ACADEMICS_DATABASE_URL = originalAcademicsUrl;
+  }
+
+  deepEqual(postgresCalls.map((call) => call.method), [
+    'createApplicantProfile',
+    'submitApplication',
+    'updateAdminApplicationStatus',
+    'convertAcceptedApplicantToStudent',
+  ]);
+  equal((postgresCalls[0].args[0] as any).institutionId, 'school-pg');
+  equal(postgresCalls[1].args[0], 'school-pg');
+  equal(postgresCalls[2].args[0], 'school-pg');
+  equal(postgresCalls[3].args[0], 'school-pg');
 }
 
 run().catch((error) => {

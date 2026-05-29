@@ -1,5 +1,6 @@
 ﻿import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AlumniService } from '../alumni.service';
+import { redactLogError } from '../../../../observability/src/log-redaction';
 
 /**
  * GraduationListener â€” Kafka consumer for the `graduation.verified.v1` topic.
@@ -75,7 +76,7 @@ export class GraduationListener implements OnModuleInit {
           } catch (parseErr) {
             this.logger.error(
               '[Kafka] Failed to process graduation.verified.v1 message',
-              parseErr,
+              redactLogError(parseErr),
             );
           }
         },

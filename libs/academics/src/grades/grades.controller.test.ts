@@ -9,12 +9,12 @@ let serviceCalls = 0;
 let savedPayload: unknown;
 let submittedPayload: unknown;
 
-process.env.CAMPUS_ONE_AUTH_SECRET = 'test-secret-with-enough-length';
+process.env.JWT_ACCESS_TOKEN_SECRET = 'test-secret-with-enough-length';
 
 function signTestToken(payload: Record<string, unknown>) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = createHmac('sha256', process.env.CAMPUS_ONE_AUTH_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
+  const signature = createHmac('sha256', process.env.JWT_ACCESS_TOKEN_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 

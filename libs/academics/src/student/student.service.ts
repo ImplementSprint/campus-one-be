@@ -5,6 +5,7 @@
   NotFoundException,
 } from '@nestjs/common';
 import { getSupabaseClient } from './config/supabase.config';
+import { redactLogError } from '../../../observability/src/log-redaction';
 import {
   IStudentRecord,
   IStudentStats,
@@ -73,7 +74,7 @@ export class StudentService {
       .order('enrolled_at', { ascending: false });
 
     if (error) {
-      this.logger.error('findAll failed', error.message);
+      this.logger.error('findAll failed', redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 
@@ -276,7 +277,7 @@ export class StudentService {
       .single();
 
     if (error) {
-      this.logger.error(`updateStatus failed for ${id}`, error.message);
+      this.logger.error(`updateStatus failed for ${id}`, redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 
@@ -301,7 +302,7 @@ export class StudentService {
       .single();
 
     if (error) {
-      this.logger.error(`updateInfo failed for ${id}`, error.message);
+      this.logger.error(`updateInfo failed for ${id}`, redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 

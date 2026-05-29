@@ -5,7 +5,7 @@
     "libs/**/*.controller.ts"
   ],
   "globalPrefix": "/api",
-  "routeCount": 145,
+  "routeCount": 148,
   "routes": [
     {
       "method": "GET",
@@ -438,6 +438,17 @@
     },
     {
       "method": "GET",
+      "route": "/api/audit/academic-events",
+      "owner": "unknown",
+      "controller": "AuditController",
+      "handler": "listAcademicEvents",
+      "access": "authenticated",
+      "scope": "authenticated",
+      "permissions": [],
+      "source": "libs/audit/src/audit.controller.ts"
+    },
+    {
+      "method": "GET",
       "route": "/api/audit/events",
       "owner": "unknown",
       "controller": "AuditController",
@@ -805,6 +816,17 @@
     },
     {
       "method": "GET",
+      "route": "/api/health/db",
+      "owner": "gateway",
+      "controller": "DatabaseHealthController",
+      "handler": "checkDatabases",
+      "access": "authenticated",
+      "scope": "authenticated",
+      "permissions": [],
+      "source": "apps/gateway/src/database-health.controller.ts"
+    },
+    {
+      "method": "GET",
       "route": "/api/health/ready",
       "owner": "gateway",
       "controller": "AppController",
@@ -1146,6 +1168,17 @@
       "owner": "academics",
       "controller": "ProfessorController",
       "handler": "getRoster",
+      "access": "authenticated",
+      "scope": "authenticated",
+      "permissions": [],
+      "source": "libs/academics/src/professor/professor.controller.ts"
+    },
+    {
+      "method": "GET",
+      "route": "/api/professor/:professorId/profile",
+      "owner": "academics",
+      "controller": "ProfessorController",
+      "handler": "getProfile",
       "access": "authenticated",
       "scope": "authenticated",
       "permissions": [],

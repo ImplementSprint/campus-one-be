@@ -7,4 +7,143 @@ datasource db {
   provider = "postgresql"
 }
 
-// Academics domain models will be added during the service migration.
+model AcademicStudentAccount {
+  id            String   @id
+  institutionId String   @map("institution_id")
+  email         String?
+  studentNumber String?  @map("student_number")
+  applicantId   String?  @map("applicant_id")
+  fullName      String?  @map("full_name")
+  program       String?
+  yearLevel     Int?     @map("year_level")
+  status        String   @default("active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  enrollments AcademicClassEnrollment[]
+
+  @@unique([institutionId, applicantId], map: "academic_student_accounts_institution_applicant_key")
+  @@index([institutionId], map: "academic_student_accounts_institution_idx")
+  @@map("academic_student_accounts")
+}
+
+model AcademicProfessorUser {
+  id            String   @id
+  institutionId String   @map("institution_id")
+  email         String?
+  fullName      String?  @map("full_name")
+  department    String?
+  employeeId    String?  @map("employee_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  classAssignments AcademicClassAssignment[]
+
+  @@index([institutionId], map: "academic_professor_users_institution_idx")
+  @@map("academic_professor_users")
+}
+
+model AcademicSubject {
+  id            String   @id
+  institutionId String   @map("institution_id")
+  code          String
+  name          String
+  description   String?
+  units         Int      @default(0)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  curriculum       AcademicCurriculum[]
+  classAssignments AcademicClassAssignment[]
+
+  @@unique([institutionId, code], map: "academic_subjects_institution_code_key")
+  @@map("academic_subjects")
+}
+
+model AcademicCurriculum {
+  id            String @id
+  institutionId String @map("institution_id")
+  program       String
+  yearLevel     Int    @map("year_level")
+  term          String
+  subjectId     String @map("subject_id")
+
+  subject AcademicSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, program, yearLevel], map: "academic_curriculum_program_idx")
+  @@map("academic_curriculum")
+}
+
+model AcademicClassAssignment {
+  id            String   @id
+  institutionId String   @map("institution_id")
+  subjectId     String   @map("subject_id")
+  professorId   String   @map("professor_id")
+  section       String
+  schedule      String?
+  room          String?
+  maxStudents   Int      @default(0) @map("max_students")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  subject     AcademicSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  professor   AcademicProfessorUser @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  enrollments AcademicClassEnrollment[]
+
+  @@index([institutionId, professorId], map: "academic_class_assignments_professor_idx")
+  @@index([institutionId, subjectId], map: "academic_class_assignments_subject_idx")
+  @@map("academic_class_assignments")
+}
+
+model AcademicClassEnrollment {
+  id                String   @id @default(uuid())
+  institutionId     String   @map("institution_id")
+  studentId         String   @map("student_id")
+  classAssignmentId String   @map("class_assignment_id")
+  enrollmentStatus  String   @default("enrolled") @map("enrollment_status")
+  enrolledAt        DateTime @default(now()) @map("enrolled_at")
+  confirmedAt       DateTime? @map("confirmed_at")
+
+  student         AcademicStudentAccount @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classAssignment AcademicClassAssignment @relation(fields: [classAssignmentId], references: [id], onDelete: Cascade)
+  grade           AcademicGrade?
+
+  @@unique([institutionId, studentId, classAssignmentId], map: "academic_class_enrollments_unique_student_class")
+  @@index([institutionId, classAssignmentId], map: "academic_class_enrollments_class_idx")
+  @@map("academic_class_enrollments")
+}
+
+model AcademicGrade {
+  id            String   @id @default(uuid())
+  institutionId String   @map("institution_id")
+  enrollmentId  String   @unique(map: "academic_grades_enrollment_id_key") @map("enrollment_id")
+  professorId   String   @map("professor_id")
+  prelimGrade   Decimal? @map("prelim_grade")
+  midtermGrade  Decimal? @map("midterm_grade")
+  finalsGrade   Decimal? @map("finals_grade")
+  finalGrade    Decimal? @map("final_grade")
+  letterGrade   String?  @map("letter_grade")
+  remarks       String?
+  isLocked      Boolean  @default(false) @map("is_locked")
+  encodedAt     DateTime? @map("encoded_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  enrollment AcademicClassEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([institutionId, enrollmentId], map: "academic_grades_unique_enrollment")
+  @@index([institutionId, professorId], map: "academic_grades_professor_idx")
+  @@map("academic_grades")
+}
+
+model AcademicEnrollmentAuditEvent {
+  id            String   @id @default(uuid())
+  institutionId String   @map("institution_id")
+  studentId     String   @map("student_id")
+  action        String
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([institutionId, studentId], map: "academic_enrollment_audit_student_idx")
+  @@map("academic_enrollment_audit_events")
+}

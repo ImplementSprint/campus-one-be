@@ -1,6 +1,9 @@
 ﻿import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { domainEventPublisher, tryPublishDomainEvent } from '../../../events/src/domain-events';
+import { createSupabaseFileStorageService } from '../../../files/src/file-storage';
+import { PostgresAdmissionsRepository } from './admissions-postgres.repository';
 
 type ServiceResponse<T> = { data: T | null; error: { message: string; code?: string } | null };
 export const ADMISSIONS_WORKFLOW_STATUSES = [
@@ -16,6 +19,26 @@ export const ADMISSIONS_WORKFLOW_STATUSES = [
 ] as const;
 export type AdmissionsWorkflowStatus = (typeof ADMISSIONS_WORKFLOW_STATUSES)[number];
 type WorkflowActor = { actorEmail?: string; remarks?: string };
+export type AdmissionsNotificationPayload = {
+  applicationId: string;
+  status: AdmissionsWorkflowStatus;
+  applicant: {
+    email: string | null;
+    mobileNumber: string | null;
+    fullName: string | null;
+    referenceNumber: string | null;
+  };
+  channels: Array<'email' | 'sms'>;
+  metadata: {
+    actorEmail: string | null;
+    remarks: string | null;
+    rejectionReason: string | null;
+    acceptanceLetterUrl: string | null;
+  };
+};
+export type AdmissionsNotificationAdapter = {
+  sendApplicantStatusUpdate(payload: AdmissionsNotificationPayload): Promise<unknown>;
+};
 
 @Injectable()
 export class ApplicationService {
@@ -26,6 +49,10 @@ export class ApplicationService {
   );
   private readonly db = this.supabase.schema('applicant');
   private readonly studentDb = this.supabase.schema('public');
+  private readonly postgres = new PostgresAdmissionsRepository();
+  private readonly eventPublisher = domainEventPublisher;
+  private readonly fileStorage = createSupabaseFileStorageService(this.supabase);
+  notificationAdapter?: AdmissionsNotificationAdapter;
 
   getHello(): string {
     return 'Application service is running.';
@@ -53,7 +80,16 @@ export class ApplicationService {
     return { data: data as { id: string }, error: null };
   }
 
-  async createApplicantProfile(dto: any): Promise<ServiceResponse<{ id: string }>> {
+  async createApplicantProfile(dto: any, institutionId?: string): Promise<ServiceResponse<{ id: string }>> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.createApplicantProfile({
+        institutionId: institutionId!,
+        email: dto.email,
+        schoolLevel: dto.school_level,
+        applicantType: dto.applicant_type,
+      });
+    }
+
     const applicantId = randomUUID();
     const { error } = await this.db.from('applicant_profiles').insert({
       id: applicantId,
@@ -69,7 +105,15 @@ export class ApplicationService {
     return { data: { id: applicantId }, error: null };
   }
 
-  async submitApplication(applicantId: string): Promise<ServiceResponse<{ reference_number: string }>> {
+  async submitApplication(applicantId: string, institutionId?: string): Promise<ServiceResponse<{ reference_number: string }>> {
+    if (this.usePostgres(institutionId)) {
+      const result = await this.postgres.submitApplication(institutionId!, applicantId);
+      if (!result.error) {
+        await this.publishApplicationSubmittedEvent(applicantId, institutionId!, result.data?.reference_number ?? null);
+      }
+      return result;
+    }
+
     const { data, error } = await this.db
       .from('applicant_profiles')
       .update({
@@ -80,10 +124,15 @@ export class ApplicationService {
       .select('reference_number')
       .single();
     if (error) return { data: null, error: { message: error.message } };
+    await this.publishApplicationSubmittedEvent(applicantId, institutionId ?? null, data.reference_number as string);
     return { data: { reference_number: data.reference_number as string }, error: null };
   }
 
-  async trackApplication(email: string, referenceNumber: string): Promise<ServiceResponse<{ id: string }>> {
+  async trackApplication(email: string, referenceNumber: string, institutionId?: string): Promise<ServiceResponse<{ id: string }>> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.trackApplication(institutionId!, email, referenceNumber);
+    }
+
     const { data, error } = await this.db
       .from('applicant_profiles')
       .select('id')
@@ -94,7 +143,22 @@ export class ApplicationService {
     return { data: { id: data.id as string }, error: null };
   }
 
-  async saveApplicantProfile(dto: any): Promise<ServiceResponse<{ id: string }>> {
+  async saveApplicantProfile(dto: any, institutionId?: string): Promise<ServiceResponse<{ id: string }>> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.saveApplicantProfile({
+        institutionId: institutionId!,
+        applicantId: dto.applicant_id,
+        firstName: dto.first_name,
+        lastName: dto.last_name,
+        middleName: dto.middle_name,
+        birthdate: dto.birthdate,
+        mobileNumber: dto.mobile_number,
+        address: dto.address,
+        schoolLevel: dto.school_level,
+        applicantType: dto.applicant_type,
+      });
+    }
+
     const fullName = `${dto.first_name} ${dto.last_name}`.trim();
     const { error } = await this.db
       .from('applicant_profiles')
@@ -114,25 +178,33 @@ export class ApplicationService {
     return { data: { id: dto.applicant_id }, error: null };
   }
 
-  async uploadApplicantDocument(dto: any): Promise<ServiceResponse<any>> {
-    const timestamp = Date.now();
-    const sanitized = dto.file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `${dto.applicant_id}/${timestamp}_${sanitized}`;
-    const fileBuffer = Buffer.from(dto.file_base64, 'base64');
+  async uploadApplicantDocument(dto: any, institutionId?: string): Promise<ServiceResponse<any>> {
+    const tenantId = institutionId ?? dto.institution_id ?? dto.tenant_id;
+    if (!tenantId) return { data: null, error: { message: 'institution id is required for document upload' } };
 
-    const { error: storageError } = await this.supabase.storage
-      .from('applicant-documents')
-      .upload(filePath, fileBuffer, { upsert: true, contentType: dto.file_type || 'application/octet-stream' });
-    if (storageError) return { data: null, error: { message: storageError.message } };
+    let storedFile: { storageUrl?: string };
+    try {
+      storedFile = await this.fileStorage.uploadBase64({
+        bucket: 'applicantDocuments',
+        tenantId,
+        ownerType: 'applicant',
+        ownerId: dto.applicant_id,
+        fileName: dto.file_name,
+        contentType: dto.file_type || 'application/octet-stream',
+        fileBase64: dto.file_base64,
+      });
+    } catch (error) {
+      return { data: null, error: { message: error instanceof Error ? error.message : 'document upload failed' } };
+    }
 
-    const { data: urlData } = this.supabase.storage.from('applicant-documents').getPublicUrl(filePath);
     const { data, error: dbError } = await this.db
       .from('applicant_documents')
       .insert({
+        institution_id: tenantId,
         applicant_id: dto.applicant_id,
         document_name: dto.document_name,
         file_name: dto.file_name,
-        file_url: urlData.publicUrl,
+        file_url: storedFile.storageUrl,
         status: 'submitted',
         school_level: dto.school_level,
         applicant_type: dto.applicant_type,
@@ -193,7 +265,18 @@ export class ApplicationService {
     return { data: { count: records.length }, error: null };
   }
 
-  async saveProgramSelection(payload: any): Promise<ServiceResponse<{ id: string }>> {
+  async saveProgramSelection(payload: any, institutionId?: string): Promise<ServiceResponse<{ id: string }>> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.saveProgramSelection({
+        institutionId: institutionId!,
+        applicantId: payload.applicant_id,
+        schoolLevel: payload.school_level,
+        collegeProgram: payload.college_program,
+        collegeDepartment: payload.college_department,
+        seniorHighTrack: payload.senior_high_track,
+      });
+    }
+
     const { error } = await this.db
       .from('program_selections')
       .upsert(payload, { onConflict: 'applicant_id' });
@@ -203,7 +286,11 @@ export class ApplicationService {
     return { data: { id: payload.applicant_id }, error: null };
   }
 
-  async fetchApplicationStatus(email: string, referenceNumber: string): Promise<ServiceResponse<any>> {
+  async fetchApplicationStatus(email: string, referenceNumber: string, institutionId?: string): Promise<ServiceResponse<any>> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.fetchApplicationStatus(institutionId!, email, referenceNumber);
+    }
+
     const { data: appData, error: appError } = await this.db
       .from('applicant_profiles')
       .select('*')
@@ -249,11 +336,17 @@ export class ApplicationService {
     };
   }
 
-  async validateApplicationAccess(email: string, referenceNumber: string): Promise<{
+  async validateApplicationAccess(email: string, referenceNumber: string, institutionId?: string): Promise<{
     valid: boolean;
     applicantId: string;
     error?: string;
   }> {
+    if (this.usePostgres(institutionId)) {
+      const result = await this.postgres.trackApplication(institutionId!, email, referenceNumber);
+      if (result.error || !result.data) return { valid: false, applicantId: '', error: 'Invalid credentials' };
+      return { valid: true, applicantId: result.data.id };
+    }
+
     const { data, error } = await this.db
       .from('applicant_profiles')
       .select('id')
@@ -264,7 +357,11 @@ export class ApplicationService {
     return { valid: true, applicantId: data.id as string };
   }
 
-  async fetchAdminApplications(): Promise<ServiceResponse<any[]>> {
+  async fetchAdminApplications(institutionId?: string): Promise<ServiceResponse<any[]>> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.fetchAdminApplications(institutionId!);
+    }
+
     const { data, error } = await this.db
       .from('applicant_profiles')
       .select('*')
@@ -274,7 +371,11 @@ export class ApplicationService {
     return { data: (data ?? []) as any[], error: null };
   }
 
-  async fetchAdminApplicationDetail(applicationId: string): Promise<ServiceResponse<any>> {
+  async fetchAdminApplicationDetail(applicationId: string, institutionId?: string): Promise<ServiceResponse<any>> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.fetchAdminApplicationDetail(institutionId!, applicationId);
+    }
+
     const { data: profile, error: profileError } = await this.db
       .from('applicant_profiles')
       .select('*')
@@ -407,8 +508,17 @@ export class ApplicationService {
     applicationId: string,
     status: AdmissionsWorkflowStatus,
     options?: string | (WorkflowActor & { rejectionReason?: string; acceptanceLetterUrl?: string }),
+    institutionId?: string,
   ): Promise<ServiceResponse<{ success: boolean }>> {
     const normalizedOptions = typeof options === 'string' ? { rejectionReason: options } : options ?? {};
+    if (this.usePostgres(institutionId)) {
+      const result = await this.postgres.updateAdminApplicationStatus(institutionId!, applicationId, status, normalizedOptions);
+      if (!result.error) {
+        await this.publishAdmissionsStatusChangedEvent(applicationId, status, normalizedOptions, institutionId!);
+      }
+      return result;
+    }
+
     const updateData: Record<string, unknown> = {
       status,
       reviewed_at: new Date().toISOString(),
@@ -446,13 +556,24 @@ export class ApplicationService {
       rejectionReason: normalizedOptions.rejectionReason ?? null,
       acceptanceLetterUrl: normalizedOptions.acceptanceLetterUrl ?? null,
     });
+    await this.notifyApplicantStatusUpdate(applicationId, status, normalizedOptions);
+    await this.publishAdmissionsStatusChangedEvent(applicationId, status, normalizedOptions, institutionId ?? null);
     return { data: { success: true }, error: null };
   }
 
   async convertAcceptedApplicantToStudent(
     applicationId: string,
     options: WorkflowActor = {},
+    institutionId?: string,
   ): Promise<ServiceResponse<{ student_number: string }>> {
+    if (this.usePostgres(institutionId)) {
+      const result = await this.postgres.convertAcceptedApplicantToStudent(institutionId!, applicationId, options);
+      if (!result.error) {
+        await this.publishApplicantConvertedEvent(applicationId, result.data?.student_number ?? null, options, institutionId!);
+      }
+      return result;
+    }
+
     const { data: applicant, error: applicantError } = await this.db
       .from('applicant_profiles')
       .select('id, email, full_name, applicant_number, status')
@@ -488,6 +609,7 @@ export class ApplicationService {
     await this.recordAdmissionAudit('applicant_converted_to_student', applicationId, options, {
       studentNumber: student?.student_number ?? studentNumber,
     });
+    await this.publishApplicantConvertedEvent(applicationId, student?.student_number ?? studentNumber, options, institutionId ?? null);
     return { data: { student_number: student?.student_number ?? studentNumber }, error: null };
   }
 
@@ -514,7 +636,18 @@ export class ApplicationService {
     applicationId: string,
     department: string,
     program: string,
+    institutionId?: string,
   ): Promise<ServiceResponse<{ success: boolean }>> {
+    if (this.usePostgres(institutionId)) {
+      const result = await this.postgres.saveProgramSelection({
+        institutionId: institutionId!,
+        applicantId: applicationId,
+        collegeDepartment: department,
+        collegeProgram: program,
+      });
+      return result.error ? { data: null, error: result.error } : { data: { success: true }, error: null };
+    }
+
     const { error } = await this.db
       .from('program_selections')
       .update({
@@ -560,6 +693,107 @@ export class ApplicationService {
         ...metadata,
       },
     });
+  }
+
+  private async publishApplicationSubmittedEvent(
+    applicationId: string,
+    institutionId: string | null,
+    referenceNumber: string | null,
+  ) {
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'admissions.application.submitted',
+      tenantId: institutionId,
+      actorId: applicationId,
+      payload: {
+        applicationId,
+        referenceNumber,
+      },
+    });
+  }
+
+  private async publishAdmissionsStatusChangedEvent(
+    applicationId: string,
+    status: AdmissionsWorkflowStatus,
+    options: WorkflowActor & { rejectionReason?: string; acceptanceLetterUrl?: string },
+    institutionId: string | null,
+  ) {
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'admissions.status_changed',
+      tenantId: institutionId,
+      actorId: options.actorEmail ?? null,
+      payload: {
+        applicationId,
+        status,
+        rejectionReason: options.rejectionReason ?? null,
+        acceptanceLetterUrl: options.acceptanceLetterUrl ?? null,
+      },
+    });
+  }
+
+  private async publishApplicantConvertedEvent(
+    applicationId: string,
+    studentNumber: string | null,
+    options: WorkflowActor,
+    institutionId: string | null,
+  ) {
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'admissions.applicant_converted',
+      tenantId: institutionId,
+      actorId: options.actorEmail ?? null,
+      payload: {
+        applicationId,
+        studentNumber,
+      },
+    });
+  }
+
+  private async notifyApplicantStatusUpdate(
+    applicationId: string,
+    status: AdmissionsWorkflowStatus,
+    options: WorkflowActor & { rejectionReason?: string; acceptanceLetterUrl?: string },
+  ) {
+    if (!this.notificationAdapter) return;
+
+    const { data: applicant } = await this.db
+      .from('applicant_profiles')
+      .select('email, mobile_number, full_name, reference_number')
+      .eq('id', applicationId)
+      .maybeSingle();
+
+    const channels: Array<'email' | 'sms'> = [];
+    if (applicant?.email) channels.push('email');
+    if (applicant?.mobile_number) channels.push('sms');
+    if (!channels.length) return;
+
+    try {
+      await this.notificationAdapter.sendApplicantStatusUpdate({
+        applicationId,
+        status,
+        applicant: {
+          email: applicant.email ?? null,
+          mobileNumber: applicant.mobile_number ?? null,
+          fullName: applicant.full_name ?? null,
+          referenceNumber: applicant.reference_number ?? null,
+        },
+        channels,
+        metadata: {
+          actorEmail: options.actorEmail ?? null,
+          remarks: options.remarks ?? null,
+          rejectionReason: options.rejectionReason ?? null,
+          acceptanceLetterUrl: options.acceptanceLetterUrl ?? null,
+        },
+      });
+    } catch {
+      // Provider delivery must not roll back the admissions decision.
+    }
+  }
+
+  private usePostgres(institutionId?: string) {
+    return Boolean(
+      institutionId?.trim() &&
+      process.env.ADMISSIONS_DATABASE_URL?.trim() &&
+      process.env.ACADEMICS_DATABASE_URL?.trim(),
+    );
   }
 }
 

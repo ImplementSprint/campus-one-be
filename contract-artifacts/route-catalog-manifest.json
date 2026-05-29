@@ -1,10 +1,11 @@
 {
   "artifact": "contract-artifacts/route-catalog.json",
   "formatVersion": 1,
-  "routeCount": 145,
-  "sha256": "091bd8461e8397bfb86fe52bba7ef2f3e370eb0688d13a8c69efa43c85e7faff",
+  "routeCount": 148,
+  "sha256": "60f99e4de512cd12fb6093f659ed0af03ea2a89756f12f20ae7ffaff0aedf293",
   "sources": [
     "apps/gateway/src/app.controller.ts",
+    "apps/gateway/src/database-health.controller.ts",
     "libs/academics/src/courses/courses.controller.ts",
     "libs/academics/src/dashboard/dashboard.controller.ts",
     "libs/academics/src/enrollment/enrollment.controller.ts",

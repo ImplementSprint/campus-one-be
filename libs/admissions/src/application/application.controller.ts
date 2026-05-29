@@ -4,6 +4,7 @@ import {
   AdmissionsWorkflowStatus,
   ApplicationService,
 } from './application.service';
+import { Headers } from '@nestjs/common';
 
 const VALID_DOCUMENT_STATUSES = ['approved', 'rejected', 'pending'] as const;
 type DocumentReviewStatus = (typeof VALID_DOCUMENT_STATUSES)[number];
@@ -28,29 +29,29 @@ export class ApplicationController {
   }
 
   @Post('create-profile')
-  createApplicantProfile(@Body() dto: any) {
-    return this.applicationService.createApplicantProfile(dto);
+  createApplicantProfile(@Body() dto: any, @Headers('x-institution-id') institutionId?: string) {
+    return this.applicationService.createApplicantProfile(dto, institutionId);
   }
 
   @Post('submit/:applicantId')
-  submitApplication(@Param('applicantId') applicantId: string) {
-    return this.applicationService.submitApplication(applicantId);
+  submitApplication(@Param('applicantId') applicantId: string, @Headers('x-institution-id') institutionId?: string) {
+    return this.applicationService.submitApplication(applicantId, institutionId);
   }
 
   @Post('track')
-  trackApplication(@Body() dto: { email: string; referenceNumber: string }) {
+  trackApplication(@Body() dto: { email: string; referenceNumber: string }, @Headers('x-institution-id') institutionId?: string) {
     this.validateTrackingFields(dto?.email, dto?.referenceNumber);
-    return this.applicationService.trackApplication(dto.email, dto.referenceNumber);
+    return this.applicationService.trackApplication(dto.email, dto.referenceNumber, institutionId);
   }
 
   @Put('profile')
-  saveApplicantProfile(@Body() dto: any) {
-    return this.applicationService.saveApplicantProfile(dto);
+  saveApplicantProfile(@Body() dto: any, @Headers('x-institution-id') institutionId?: string) {
+    return this.applicationService.saveApplicantProfile(dto, institutionId);
   }
 
   @Post('upload-document')
-  uploadApplicantDocument(@Body() dto: any) {
-    return this.applicationService.uploadApplicantDocument(dto);
+  uploadApplicantDocument(@Body() dto: any, @Headers('x-institution-id') institutionId?: string) {
+    return this.applicationService.uploadApplicantDocument(dto, institutionId);
   }
 
   @Get('result/:applicantId')
@@ -74,30 +75,41 @@ export class ApplicationController {
   }
 
   @Put('program-selection')
-  saveProgramSelection(@Body() dto: any) {
-    return this.applicationService.saveProgramSelection(dto);
+  saveProgramSelection(@Body() dto: any, @Headers('x-institution-id') institutionId?: string) {
+    return this.applicationService.saveProgramSelection(dto, institutionId);
   }
 
   @Get('status')
-  fetchApplicationStatus(@Query('email') email: string, @Query('referenceNumber') referenceNumber: string) {
+  fetchApplicationStatus(
+    @Query('email') email: string,
+    @Query('referenceNumber') referenceNumber: string,
+    @Headers('x-institution-id') institutionId?: string,
+  ) {
     this.validateTrackingFields(email, referenceNumber);
-    return this.applicationService.fetchApplicationStatus(email, referenceNumber);
+    return this.applicationService.fetchApplicationStatus(email, referenceNumber, institutionId);
   }
 
   @Get('validate-access')
-  validateApplicationAccess(@Query('email') email: string, @Query('referenceNumber') referenceNumber: string) {
+  validateApplicationAccess(
+    @Query('email') email: string,
+    @Query('referenceNumber') referenceNumber: string,
+    @Headers('x-institution-id') institutionId?: string,
+  ) {
     this.validateTrackingFields(email, referenceNumber);
-    return this.applicationService.validateApplicationAccess(email, referenceNumber);
+    return this.applicationService.validateApplicationAccess(email, referenceNumber, institutionId);
   }
 
   @Get('admin/applications')
-  fetchAdminApplications() {
-    return this.applicationService.fetchAdminApplications();
+  fetchAdminApplications(@Headers('x-institution-id') institutionId?: string) {
+    return this.applicationService.fetchAdminApplications(institutionId);
   }
 
   @Get('admin/applications/:applicationId')
-  fetchAdminApplicationDetail(@Param('applicationId') applicationId: string) {
-    return this.applicationService.fetchAdminApplicationDetail(applicationId);
+  fetchAdminApplicationDetail(
+    @Param('applicationId') applicationId: string,
+    @Headers('x-institution-id') institutionId?: string,
+  ) {
+    return this.applicationService.fetchAdminApplicationDetail(applicationId, institutionId);
   }
 
   @Put('admin/applications/:applicationId/status')
@@ -110,6 +122,7 @@ export class ApplicationController {
       actorEmail?: string;
       acceptanceLetterUrl?: string;
     },
+    @Headers('x-institution-id') institutionId?: string,
   ) {
     this.validateApplicationId(applicationId);
     this.validateAdminStatus(dto?.status);
@@ -117,12 +130,17 @@ export class ApplicationController {
       throw new BadRequestException('rejectionReason is required when status is rejected');
     }
 
-    return this.applicationService.updateAdminApplicationStatus(applicationId, dto.status, {
-      rejectionReason: dto.rejectionReason,
-      remarks: dto.remarks,
-      actorEmail: dto.actorEmail,
-      acceptanceLetterUrl: dto.acceptanceLetterUrl,
-    });
+    return this.applicationService.updateAdminApplicationStatus(
+      applicationId,
+      dto.status,
+      {
+        rejectionReason: dto.rejectionReason,
+        remarks: dto.remarks,
+        actorEmail: dto.actorEmail,
+        acceptanceLetterUrl: dto.acceptanceLetterUrl,
+      },
+      institutionId,
+    );
   }
 
   @Get('admin/stats')
@@ -134,12 +152,13 @@ export class ApplicationController {
   updateAdminProgramSelection(
     @Param('applicationId') applicationId: string,
     @Body() dto: { department: string; program: string },
+    @Headers('x-institution-id') institutionId?: string,
   ) {
     if (!this.hasText(applicationId) || !this.hasText(dto?.department) || !this.hasText(dto?.program)) {
       throw new BadRequestException('applicationId, department, and program are required');
     }
 
-    return this.applicationService.updateAdminProgramSelection(applicationId, dto.department, dto.program);
+    return this.applicationService.updateAdminProgramSelection(applicationId, dto.department, dto.program, institutionId);
   }
 
   @Put('admin/applications/:applicationId/documents/:documentId/verification')
@@ -209,9 +228,10 @@ export class ApplicationController {
   convertAcceptedApplicantToStudent(
     @Param('applicationId') applicationId: string,
     @Body() dto: { actorEmail?: string; remarks?: string } = {},
+    @Headers('x-institution-id') institutionId?: string,
   ) {
     this.validateApplicationId(applicationId);
-    return this.applicationService.convertAcceptedApplicantToStudent(applicationId, dto);
+    return this.applicationService.convertAcceptedApplicantToStudent(applicationId, dto, institutionId);
   }
 
   private validateTrackingFields(email?: string, referenceNumber?: string) {

@@ -32,7 +32,7 @@ export class EnrollmentController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     this.authorizeStudent(authorization, role, userId, institutionId, schoolSlug);
-    try { return await this.enrollmentService.getOfferings(studentId, program, yearLevel); }
+    try { return await this.enrollmentService.getOfferings(studentId, program, yearLevel, institutionId); }
     catch (e: any) { throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
@@ -53,7 +53,7 @@ export class EnrollmentController {
       throw new BadRequestException('Duplicate class selections are not allowed');
     }
 
-    try { return await this.enrollmentService.submit(body.studentId, body.classAssignmentIds); }
+    try { return await this.enrollmentService.submit(body.studentId, body.classAssignmentIds, institutionId); }
     catch (e: any) { throw new HttpException(e.message, e.status || HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
@@ -139,7 +139,7 @@ export class EnrollmentController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     this.authorizeStudent(authorization, role, userId, institutionId, schoolSlug);
-    try { return await this.enrollmentService.getStatus(studentId); }
+    try { return await this.enrollmentService.getStatus(studentId, institutionId); }
     catch (e: any) { throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 

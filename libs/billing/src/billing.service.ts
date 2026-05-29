@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { supabase } from '@campus-one/database/supabase';
+import { domainEventPublisher, tryPublishDomainEvent } from '../../events/src/domain-events';
 
 type PaymentStatus = 'unpaid' | 'partial' | 'paid';
 
 @Injectable()
 export class BillingService {
   private readonly db = supabase.schema('billing');
+  private readonly eventPublisher = domainEventPublisher;
 
   async getStudentBalance(studentId: string) {
     const [assessmentsResult, paymentsResult] = await Promise.all([
@@ -76,7 +78,7 @@ export class BillingService {
 
     if (error) throw error;
 
-    return {
+    const payment = {
       id: data.id,
       studentId: data.student_id,
       amount: Number(data.amount ?? 0),
@@ -84,6 +86,21 @@ export class BillingService {
       paidAt: data.paid_at,
       referenceNumber: data.reference_number,
     };
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'payment.received',
+      tenantId: null,
+      actorId: studentId,
+      payload: {
+        paymentId: payment.id,
+        studentId,
+        amount: payment.amount,
+        status: payment.status,
+        referenceNumber: payment.referenceNumber,
+        paymentMode: 'manual',
+      },
+    });
+
+    return payment;
   }
 
   async getReceipt(studentId: string, paymentId: string) {

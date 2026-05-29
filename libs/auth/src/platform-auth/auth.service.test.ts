@@ -1,6 +1,6 @@
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { strictEqual, ok, rejects } from 'node:assert/strict';
-import { AuthService, type AuthRepository, type StoredAccount } from './auth.service';
+import { AUTH_ACCOUNT_LOOKUP_SQL, AuthService, type AuthRepository, type StoredAccount } from './auth.service';
 
 class MemoryAuthRepository implements AuthRepository {
   private readonly accounts = new Map<string, StoredAccount>();
@@ -18,10 +18,15 @@ class MemoryAuthRepository implements AuthRepository {
 }
 
 async function main() {
-  process.env.CAMPUS_ONE_AUTH_SECRET = 'test-secret-with-enough-length';
+  delete process.env.CAMPUS_ONE_AUTH_SECRET;
+  process.env.JWT_ACCESS_TOKEN_SECRET = 'test-secret-with-enough-length';
 
   const repository = new MemoryAuthRepository();
   const auth = new AuthService(repository);
+
+  ok(AUTH_ACCOUNT_LOOKUP_SQL.includes('tenant_user_memberships'));
+  ok(AUTH_ACCOUNT_LOOKUP_SQL.includes('coalesce(soa.institution_id, tum.institution_id)'));
+  ok(AUTH_ACCOUNT_LOOKUP_SQL.includes("tum.status = 'active'"));
 
   const signup = await auth.signUp({
     email: ' Admin@CampusOne.test ',

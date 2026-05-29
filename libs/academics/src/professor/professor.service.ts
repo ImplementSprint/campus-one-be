@@ -1,13 +1,34 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { supabase } from '@campus-one/database/supabase';
 import { NotificationsService } from '../../../notifications/src/notifications.service';
+import { PostgresAcademicsRepository } from '../academics-postgres.repository';
 
 @Injectable()
 export class ProfessorService {
   private readonly db = supabase.schema('public');
   private readonly notifications = new NotificationsService();
+  private readonly postgres = new PostgresAcademicsRepository();
 
-  async getClasses(professorId: string) {
+  async getProfile(professorId: string) {
+    const { data, error } = await this.db
+      .from('professor_users')
+      .select('id, institution_id, email, full_name, department, employee_id, created_at, updated_at')
+      .eq('id', professorId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+
+    return {
+      professorId,
+      profile: data ?? null,
+    };
+  }
+
+  async getClasses(professorId: string, institutionId?: string) {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.getProfessorClasses(institutionId!, professorId);
+    }
+
     const { data, error } = await this.db
       .from('class_assignments')
       .select('id, section, schedule, room, max_students, subjects!inner(id, code, name, description, units)')
@@ -40,8 +61,8 @@ export class ProfessorService {
     };
   }
 
-  async getSchedule(professorId: string) {
-    const classes = await this.getClasses(professorId);
+  async getSchedule(professorId: string, institutionId?: string) {
+    const classes = await this.getClasses(professorId, institutionId);
 
     return {
       professorId,
@@ -59,7 +80,11 @@ export class ProfessorService {
     };
   }
 
-  async getRoster(professorId: string, classId: string) {
+  async getRoster(professorId: string, classId: string, institutionId?: string) {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.getRoster(institutionId!, professorId, classId);
+    }
+
     await this.assertClassBelongsToProfessor(professorId, classId);
 
     const { data, error } = await this.db
@@ -254,5 +279,9 @@ export class ProfessorService {
 
     if (error) throw new Error(error.message);
     if (!data) throw new ForbiddenException('Professor is not assigned to this announcement.');
+  }
+
+  private usePostgres(institutionId?: string) {
+    return Boolean(institutionId?.trim() && process.env.ACADEMICS_DATABASE_URL?.trim());
   }
 }

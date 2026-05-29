@@ -1,9 +1,16 @@
-﻿import { Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { supabase } from '@campus-one/database/supabase';
+import { PostgresAcademicsRepository } from '../academics-postgres.repository';
 
 @Injectable()
 export class DashboardService {
-  async getDashboard(userId: string) {
+  private readonly postgres = new PostgresAcademicsRepository();
+
+  async getDashboard(userId: string, institutionId?: string) {
+    if (institutionId?.trim() && process.env.ACADEMICS_DATABASE_URL?.trim()) {
+      return this.postgres.getDashboardSummary(institutionId, userId);
+    }
+
     const applicationDb = supabase.schema('applicant');
     const studentDb = supabase.schema('student');
 
@@ -29,5 +36,3 @@ export class DashboardService {
     return { name, enrolledCourses, enrolledUnits, cartSubjects: 0, cartUnits: 0 };
   }
 }
-
-

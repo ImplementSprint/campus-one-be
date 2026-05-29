@@ -10,6 +10,7 @@ import type { TenantContext } from '../../../tenants/src/tenant-context';
 import type { SignUpDto } from './dto/signup.dto';
 import type { LoginDto } from './dto/login.dto';
 import type { CurrentUserResponse, SignUpResponse, LoginResponse } from './interfaces/super-admin.interface';
+import { getAccessTokenSecretForSigning } from './access-token-secret';
 
 export type StoredAccount = {
   id: string;
@@ -33,27 +34,35 @@ export interface AuthRepository {
 }
 
 export const AUTH_REPOSITORY = Symbol('AUTH_REPOSITORY');
+export const AUTH_ACCOUNT_LOOKUP_SQL = `
+        select
+          pa.id,
+          pa.email,
+          pa.password_hash,
+          coalesce(sa.role, soa.role, tum.role, 'super_admin') as role,
+          coalesce(soa.institution_id, tum.institution_id) as "activeInstitutionId"
+        from portal_accounts pa
+        left join super_admins sa on lower(sa.email) = lower(pa.email)
+        left join school_owner_accounts soa on lower(soa.email) = lower(pa.email)
+        left join tenant_user_memberships tum
+          on lower(tum.email) = lower(pa.email)
+          and tum.status = 'active'
+        where lower(pa.email) = lower($1)
+        order by
+          case
+            when sa.id is not null then 0
+            when soa.id is not null then 1
+            when tum.id is not null then 2
+            else 3
+          end
+        limit 1
+      `;
 
 export class PostgresAuthRepository implements AuthRepository {
   private pool: any;
 
   async findAccountByEmail(email: string): Promise<StoredAccount | null> {
-    const result = await this.query(
-      `
-        select
-          pa.id,
-          pa.email,
-          pa.password_hash,
-          coalesce(soa.role, sa.role, 'super_admin') as role,
-          soa.institution_id as "activeInstitutionId"
-        from portal_accounts pa
-        left join super_admins sa on lower(sa.email) = lower(pa.email)
-        left join school_owner_accounts soa on lower(soa.email) = lower(pa.email)
-        where lower(pa.email) = lower($1)
-        limit 1
-      `,
-      [email],
-    );
+    const result = await this.query(AUTH_ACCOUNT_LOOKUP_SQL, [email]);
     const row = result.rows[0];
     if (!row) return null;
 
@@ -121,14 +130,6 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function getAuthSecret(): string {
-  const secret = process.env.CAMPUS_ONE_AUTH_SECRET;
-  if (!secret || secret.length < 16) {
-    throw new InternalServerErrorException('CAMPUS_ONE_AUTH_SECRET must be configured.');
-  }
-  return secret;
-}
-
 function toBase64Url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64url');
 }
@@ -186,7 +187,7 @@ function signUserToken(user: CurrentUser): string {
     }),
   );
   const body = `${header}.${payload}`;
-  const signature = createHmac('sha256', getAuthSecret()).update(body).digest('base64url');
+  const signature = createHmac('sha256', getAccessTokenSecretForSigning()).update(body).digest('base64url');
   return `${body}.${signature}`;
 }
 
@@ -197,7 +198,7 @@ function verifyUserToken(token: string): CurrentUser {
   }
 
   const body = `${header}.${payload}`;
-  const expected = createHmac('sha256', getAuthSecret()).update(body).digest('base64url');
+  const expected = createHmac('sha256', getAccessTokenSecretForSigning()).update(body).digest('base64url');
   const actualSignature = Buffer.from(signature);
   const expectedSignature = Buffer.from(expected);
   if (

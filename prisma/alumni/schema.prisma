@@ -7,4 +7,100 @@ datasource db {
   provider = "postgresql"
 }
 
-// Alumni domain models will be added during the service migration.
+model AlumniRegistrationLog {
+  logId                String   @id @default(dbgenerated("gen_random_uuid()::text")) @map("log_id")
+  institutionId        String   @map("institution_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actorUuid            String   @map("actor_uuid")
+  actionType           String   @map("action_type")
+  statusCode           Int      @map("status_code")
+  tenantId             String   @map("tenant_id") @db.Uuid
+  fullName             String   @map("full_name")
+  email                String
+  graduationYear       Int      @map("graduation_year")
+  program              String
+  academicUnit         String   @map("academic_unit")
+  isLegacyRegistration Boolean  @default(false) @map("is_legacy_registration")
+  documentUrl          String?  @map("document_url")
+  studentId            String?  @map("student_id")
+  proofReference       String?  @map("proof_reference")
+
+  @@index([institutionId, createdAt], map: "alumni_registration_logs_institution_created_idx")
+  @@index([actorUuid, createdAt], map: "alumni_registration_logs_actor_created_idx")
+  @@map("alumni_registration_logs")
+}
+
+model AlumniAccount {
+  id             String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  institutionId  String    @map("institution_id") @db.Uuid
+  email          String
+  passwordHash   String    @map("password_hash")
+  name           String
+  studentNumber  String?   @map("student_number")
+  graduationYear Int?      @map("graduation_year")
+  program        String?
+  academicUnit   String?   @map("academic_unit")
+  phoneNumber    String?   @map("phone_number")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastLogin      DateTime? @map("last_login") @db.Timestamptz(6)
+
+  @@unique([institutionId, email], map: "alumni_accounts_institution_email_key")
+  @@index([institutionId], map: "alumni_accounts_institution_idx")
+  @@map("alumni_accounts")
+}
+
+model AlumniRecordRequest {
+  logId          String   @id @default(dbgenerated("gen_random_uuid()::text")) @map("log_id")
+  institutionId  String   @map("institution_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actorUuid      String   @map("actor_uuid")
+  actionType     String   @map("action_type")
+  statusCode     Int      @map("status_code")
+  tenantId       String   @map("tenant_id") @db.Uuid
+  documentType   String   @map("document_type")
+  feeAmount      Int      @map("fee_amount")
+  paymentStatus  String   @default("pending") @map("payment_status")
+  notes          String?
+  deliveryMethod String?  @map("delivery_method")
+  numberOfCopies Int      @default(1) @map("number_of_copies")
+
+  @@index([institutionId, createdAt], map: "alumni_record_requests_institution_created_idx")
+  @@index([actorUuid, createdAt], map: "alumni_record_requests_actor_created_idx")
+  @@index([institutionId, statusCode], map: "alumni_record_requests_status_idx")
+  @@map("alumni_record_requests")
+}
+
+model AlumniCardApplication {
+  logId           String   @id @default(dbgenerated("gen_random_uuid()::text")) @map("log_id")
+  institutionId   String   @map("institution_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actorUuid       String   @map("actor_uuid")
+  actionType      String   @map("action_type")
+  statusCode      Int      @map("status_code")
+  tenantId        String   @map("tenant_id") @db.Uuid
+  applicationType String   @map("application_type")
+  deliveryMethod  String   @map("delivery_method")
+  idPhotoUrl      String?  @map("id_photo_url")
+  paymentStatus   String   @default("pending") @map("payment_status")
+  cardSerial      String?  @map("card_serial")
+
+  @@index([institutionId, createdAt], map: "alumni_card_applications_institution_created_idx")
+  @@index([actorUuid, createdAt], map: "alumni_card_applications_actor_created_idx")
+  @@index([institutionId, statusCode], map: "alumni_card_applications_status_idx")
+  @@map("alumni_card_applications")
+}
+
+model AlumniActivityEvent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  institutionId String   @map("institution_id") @db.Uuid
+  actorUuid     String   @map("actor_uuid")
+  eventType     String   @map("event_type")
+  targetId      String   @map("target_id")
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([institutionId, actorUuid], map: "alumni_activity_events_actor_idx")
+  @@index([institutionId, eventType], map: "alumni_activity_events_type_idx")
+  @@map("alumni_activity_events")
+}

@@ -7,18 +7,22 @@ import { ProfessorController } from './professor.controller';
 
 let calls = 0;
 
-process.env.CAMPUS_ONE_AUTH_SECRET = 'test-secret-with-enough-length';
+process.env.JWT_ACCESS_TOKEN_SECRET = 'test-secret-with-enough-length';
 
 function signTestToken(payload: Record<string, unknown>) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = createHmac('sha256', process.env.CAMPUS_ONE_AUTH_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
+  const signature = createHmac('sha256', process.env.JWT_ACCESS_TOKEN_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
 const professorAuth = [`Bearer ${signTestToken({ sub: 'professor-123', role: 'professor' })}`, 'professor', 'professor-123', 'school-a'] as const;
 
 const service = {
+  async getProfile(professorId: string) {
+    calls += 1;
+    return { professorId, profile: { id: professorId, full_name: 'Ada Professor' } };
+  },
   async getClasses(professorId: string) {
     calls += 1;
     return { professorId, classes: [{ id: 'class-123' }] };
@@ -59,6 +63,8 @@ async function expectBadRequest(operation: () => Promise<unknown>, expectedMessa
 
 async function run() {
   equal(Reflect.getMetadata(PATH_METADATA, ProfessorController), 'professor');
+  equal(Reflect.getMetadata(PATH_METADATA, ProfessorController.prototype.getProfile), ':professorId/profile');
+  equal(Reflect.getMetadata(METHOD_METADATA, ProfessorController.prototype.getProfile), RequestMethod.GET);
   equal(Reflect.getMetadata(PATH_METADATA, ProfessorController.prototype.getClasses), ':professorId/classes');
   equal(Reflect.getMetadata(METHOD_METADATA, ProfessorController.prototype.getClasses), RequestMethod.GET);
   equal(Reflect.getMetadata(PATH_METADATA, ProfessorController.prototype.getRoster), ':professorId/classes/:classId/roster');
@@ -76,6 +82,7 @@ async function run() {
 
   const controller = new ProfessorController(service as any);
 
+  equal((await controller.getProfile('professor-123', ...professorAuth)).profile.full_name, 'Ada Professor');
   equal((await controller.getClasses('professor-123', ...professorAuth)).classes.length, 1);
   equal((await controller.getRoster('professor-123', 'class-123', ...professorAuth)).students.length, 1);
   equal((await controller.getSchedule('professor-123', ...professorAuth)).schedule.length, 1);
@@ -89,6 +96,10 @@ async function run() {
   }, ...professorAuth)).announcement.is_pinned, true);
   equal((await controller.deleteAnnouncement('professor-123', 'announcement-123', ...professorAuth)).deleted, true);
 
+  await expectBadRequest(
+    () => controller.getProfile(' ', ...professorAuth),
+    'professor id is required',
+  );
   await expectBadRequest(
     () => controller.getClasses(' ', ...professorAuth),
     'professor id is required',
@@ -122,10 +133,10 @@ async function run() {
     'announcement id is required',
   );
 
-  equal(calls, 7);
+  equal(calls, 8);
 
   await rejects(
-    () => controller.getClasses('professor-123'),
+    () => controller.getProfile('professor-123'),
     UnauthorizedException,
   );
 }

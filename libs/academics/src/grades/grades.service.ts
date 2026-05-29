@@ -1,12 +1,20 @@
 ﻿import { ForbiddenException, Injectable } from '@nestjs/common';
 import { supabase } from '@campus-one/database/supabase';
 import { NotificationsService } from '../../../notifications/src/notifications.service';
+import { domainEventPublisher, tryPublishDomainEvent } from '../../../events/src/domain-events';
+import { PostgresAcademicsRepository } from '../academics-postgres.repository';
 
 @Injectable()
 export class GradesService {
   private readonly notifications = new NotificationsService();
+  private readonly postgres = new PostgresAcademicsRepository();
+  private readonly eventPublisher = domainEventPublisher;
 
-  async getProfessorGradebook(professorId: string, classAssignmentId: string) {
+  async getProfessorGradebook(professorId: string, classAssignmentId: string, institutionId?: string) {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.getRoster(institutionId!, professorId, classAssignmentId);
+    }
+
     const db = supabase.schema('public');
     const { data, error } = await db.from('class_enrollments')
       .select(`
@@ -48,7 +56,23 @@ export class GradesService {
     return { success: true, status: 'saved', grade: data };
   }
 
-  async submitProfessorGrade(payload: any) {
+  async submitProfessorGrade(payload: any, institutionId?: string) {
+    if (this.usePostgres(institutionId)) {
+      const result = await this.postgres.submitProfessorGrade({
+        institutionId: institutionId!,
+        professorId: payload.professorId,
+        enrollmentId: payload.enrollmentId,
+        prelimGrade: payload.prelimGrade,
+        midtermGrade: payload.midtermGrade,
+        finalsGrade: payload.finalsGrade,
+        finalGrade: payload.finalGrade,
+        letterGrade: payload.letterGrade,
+        remarks: payload.remarks,
+      });
+      await this.publishGradeSubmittedEvent(payload, institutionId!);
+      return result;
+    }
+
     await this.assertEnrollmentBelongsToProfessor(payload.professorId, payload.enrollmentId);
 
     const db = supabase.schema('public');
@@ -72,6 +96,7 @@ export class GradesService {
         enrollmentId: payload.enrollmentId,
       },
     });
+    await this.publishGradeSubmittedEvent(payload, institutionId ?? null);
 
     return {
       success: true,
@@ -87,7 +112,11 @@ export class GradesService {
     };
   }
 
-  async getGrades(userId: string) {
+  async getGrades(userId: string, institutionId?: string) {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.getGrades(institutionId!, userId);
+    }
+
     const applicationDb = supabase.schema('applicant');
     const studentDb = supabase.schema('student');
 
@@ -114,8 +143,8 @@ export class GradesService {
     return { studentName, program, grades, totalUnits, gwa };
   }
 
-  async getSummary(userId: string) {
-    const gradeReport = await this.getGrades(userId);
+  async getSummary(userId: string, institutionId?: string) {
+    const gradeReport = await this.getGrades(userId, institutionId);
 
     return {
       studentName: gradeReport.studentName,
@@ -124,8 +153,8 @@ export class GradesService {
     };
   }
 
-  async getTermSummary(userId: string, term: string) {
-    const gradeReport = await this.getGrades(userId);
+  async getTermSummary(userId: string, term: string, institutionId?: string) {
+    const gradeReport = await this.getGrades(userId, institutionId);
 
     return {
       studentName: gradeReport.studentName,
@@ -186,6 +215,24 @@ export class GradesService {
     if (error) throw new Error(error.message);
     if (!data) throw new ForbiddenException('Professor is not assigned to this enrollment.');
   }
+
+  private usePostgres(institutionId?: string) {
+    return Boolean(institutionId?.trim() && process.env.ACADEMICS_DATABASE_URL?.trim());
+  }
+
+  private async publishGradeSubmittedEvent(payload: any, institutionId?: string | null) {
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'grade.submitted',
+      tenantId: institutionId ?? null,
+      actorId: payload.professorId ?? null,
+      payload: {
+        enrollmentId: payload.enrollmentId,
+        professorId: payload.professorId,
+        finalGrade: payload.finalGrade,
+        letterGrade: payload.letterGrade,
+      },
+    });
+  }
 }
 
 function toGradeRow(payload: any) {
@@ -215,7 +262,7 @@ export function summarizeGrades(grades: Array<{ units: number; grade: string; re
   const gradedUnits = numericGrades.reduce((sum, grade) => sum + grade.units, 0);
   const weightedTotal = numericGrades.reduce((sum, grade) => sum + grade.value * grade.units, 0);
   const failedUnits = numericGrades
-    .filter((grade) => grade.value >= 5 || grade.remarks === 'Failed')
+    .filter((grade) => isFailedGradeValue(grade.value, grade.remarks))
     .reduce((sum, grade) => sum + grade.units, 0);
   const passedUnits = Math.max(gradedUnits - failedUnits, 0);
 
@@ -233,5 +280,14 @@ function getAcademicStanding(totalGradeRows: number, failedUnits: number) {
   if (!totalGradeRows) return 'no_grades';
   if (failedUnits > 0) return 'has_deficiencies';
   return 'good_standing';
+}
+
+function isFailedGradeValue(value: number, remarks?: string) {
+  const normalizedRemarks = remarks?.trim().toLowerCase();
+  if (normalizedRemarks === 'failed') return true;
+  if (normalizedRemarks === 'passed') return false;
+
+  if (value > 5) return value < 75;
+  return value >= 5;
 }
 

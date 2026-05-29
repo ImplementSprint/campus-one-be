@@ -1,6 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { supabaseAdmin } from '@campus-one/database/supabase';
 
 const ACADEMIC_RESOURCE_TYPES = [
   'departments',
@@ -48,6 +47,10 @@ export type SchoolAdminRepository = {
   queueDelivery(input: Record<string, unknown>): Promise<unknown>;
 };
 
+type Queryable = {
+  query(text: string, values?: unknown[]): Promise<{ rows: any[]; rowCount?: number | null }>;
+};
+
 @Injectable()
 export class SchoolAdminService {
   private readonly repository: SchoolAdminRepository;
@@ -57,7 +60,7 @@ export class SchoolAdminService {
     @Inject('SchoolAdminRepository')
     repository?: SchoolAdminRepository,
   ) {
-    this.repository = repository ?? new SupabaseSchoolAdminRepository();
+    this.repository = repository ?? new PostgresSchoolAdminRepository();
   }
 
   async getProfile(institutionId: string) {
@@ -326,117 +329,164 @@ export class SchoolAdminService {
   }
 }
 
-class SupabaseSchoolAdminRepository implements SchoolAdminRepository {
+export class PostgresSchoolAdminRepository implements SchoolAdminRepository {
+  private pool?: Queryable;
+
+  constructor(private readonly queryable?: Queryable) {}
+
   async getProfile(institutionId: string) {
-    const { data, error } = await supabaseAdmin
-      .from('institution_profiles')
-      .select('*')
-      .eq('id', institutionId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    return data;
+    const result = await this.query(
+      `
+        select data
+        from school_admin_profiles
+        where institution_id = $1
+      `,
+      [institutionId],
+    );
+    const row = result.rows[0];
+    return row ? { id: institutionId, ...(row.data ?? {}) } : null;
   }
 
   async upsertProfile(institutionId: string, payload: Record<string, unknown>) {
-    const { data, error } = await supabaseAdmin
-      .from('institution_profiles')
-      .upsert({ id: institutionId, ...payload }, { onConflict: 'id' })
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
-    return data;
+    const result = await this.query(
+      `
+        insert into school_admin_profiles (institution_id, data, updated_at)
+        values ($1, $2::jsonb, now())
+        on conflict (institution_id) do update
+          set data = school_admin_profiles.data || excluded.data,
+              updated_at = now()
+        returning data
+      `,
+      [institutionId, payload],
+    );
+    return { id: institutionId, ...(result.rows[0]?.data ?? payload) };
   }
 
   async listRecords(institutionId: string, resourceType: string, filters: Record<string, string> = {}) {
-    const { data, error } = await supabaseAdmin
-      .from('institution_resources')
-      .select('id, institution_id, resource_type, data, created_at, updated_at')
-      .eq('institution_id', institutionId)
-      .eq('resource_type', resourceType)
-      .order('created_at', { ascending: false });
-    if (error) throw new Error(error.message);
-    return (data ?? [])
-      .map(mapResourceRow)
+    const result = await this.query(
+      `
+        select id, institution_id, resource_type, data, created_at, updated_at
+        from institution_resources
+        where institution_id = $1
+          and resource_type = $2
+        order by created_at desc
+      `,
+      [institutionId, resourceType],
+    );
+    return result.rows
+      .map(mapPostgresResourceRow)
       .filter((record) => Object.entries(filters).every(([key, value]) => record.data[key] === value));
   }
 
   async getRecord(institutionId: string, resourceType: string, id: string) {
-    const { data, error } = await supabaseAdmin
-      .from('institution_resources')
-      .select('id, institution_id, resource_type, data, created_at, updated_at')
-      .eq('id', id)
-      .eq('institution_id', institutionId)
-      .eq('resource_type', resourceType)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    return data ? mapResourceRow(data) : null;
+    const result = await this.query(
+      `
+        select id, institution_id, resource_type, data, created_at, updated_at
+        from institution_resources
+        where institution_id = $1
+          and resource_type = $2
+          and id = $3
+      `,
+      [institutionId, resourceType, id],
+    );
+    return result.rows[0] ? mapPostgresResourceRow(result.rows[0]) : null;
   }
 
   async upsertRecord(record: SchoolAdminRecord) {
-    const { data, error } = await supabaseAdmin
-      .from('institution_resources')
-      .upsert({
-        id: record.id,
-        institution_id: record.institutionId,
-        resource_type: record.resourceType,
-        data: record.data,
-        updated_at: record.updatedAt ?? new Date().toISOString(),
-      }, { onConflict: 'id' })
-      .select('id, institution_id, resource_type, data, created_at, updated_at')
-      .single();
-    if (error) throw new Error(error.message);
-    return mapResourceRow(data);
+    const result = await this.query(
+      `
+        insert into institution_resources (id, institution_id, resource_type, data, updated_at)
+        values ($1, $2, $3, $4::jsonb, coalesce($5::timestamptz, now()))
+        on conflict (id) do update
+          set institution_id = excluded.institution_id,
+              resource_type = excluded.resource_type,
+              data = excluded.data,
+              updated_at = excluded.updated_at
+        returning id, institution_id, resource_type, data, created_at, updated_at
+      `,
+      [record.id, record.institutionId, record.resourceType, record.data, record.updatedAt ?? null],
+    );
+    return mapPostgresResourceRow(result.rows[0]);
   }
 
   async deleteRecord(institutionId: string, resourceType: string, id: string) {
-    const { error } = await supabaseAdmin
-      .from('institution_resources')
-      .delete()
-      .eq('id', id)
-      .eq('institution_id', institutionId)
-      .eq('resource_type', resourceType);
-    if (error) throw new Error(error.message);
-    return true;
+    const result = await this.query(
+      `
+        delete from institution_resources
+        where institution_id = $1
+          and resource_type = $2
+          and id = $3
+      `,
+      [institutionId, resourceType, id],
+    );
+    return Boolean(result.rowCount);
   }
 
   async recordAudit(input: Record<string, unknown>) {
-    const { error } = await supabaseAdmin
-      .from('audit_events')
-      .insert({
-        institution_id: input.institutionId ?? null,
-        action: input.action,
-        actor_email: input.actorId,
-        metadata: {
-          target: input.target,
+    await this.query(
+      `
+        insert into audit_events (institution_id, actor_user_id, event_type, metadata)
+        values ($1, $2, $3, $4::jsonb)
+      `,
+      [
+        input.institutionId ?? null,
+        isUuid(input.actorId) ? input.actorId : null,
+        input.action,
+        {
+          actorId: input.actorId ?? null,
+          target: input.target ?? null,
           ...(input.metadata as Record<string, unknown> | undefined),
         },
-        created_at: new Date().toISOString(),
-      });
-    return { recorded: !error, error: error?.message };
+      ],
+    );
+    return { recorded: true };
   }
 
   async queueDelivery(input: Record<string, unknown>) {
-    const { error } = await supabaseAdmin
-      .from('institution_resources')
-      .insert({
-        id: `delivery-${randomUUID()}`,
-        institution_id: input.institutionId,
-        resource_type: 'delivery-queue',
-        data: input,
-      });
-    return { queued: !error, error: error?.message, channel: input.channel };
+    await this.query(
+      `
+        insert into school_admin_delivery_queue (institution_id, channel, template, recipient, actor_id, payload)
+        values ($1, $2, $3, $4, $5, $6::jsonb)
+      `,
+      [
+        input.institutionId,
+        input.channel,
+        input.template,
+        input.recipient,
+        input.actorId ?? null,
+        input.payload ?? {},
+      ],
+    );
+    return { queued: true, channel: input.channel };
+  }
+
+  private async query(text: string, values: unknown[] = []) {
+    if (this.queryable) return this.queryable.query(text, values);
+    if (!this.pool) {
+      const connectionString = process.env.TENANT_REGISTRY_DATABASE_URL;
+      if (!connectionString) {
+        throw new Error('TENANT_REGISTRY_DATABASE_URL must be configured.');
+      }
+      const { Pool } = require('pg');
+      this.pool = new Pool({ connectionString });
+    }
+    return this.pool.query(text, values);
   }
 }
 
-function mapResourceRow(row: any): SchoolAdminRecord {
+function mapPostgresResourceRow(row: any): SchoolAdminRecord {
   return {
     id: row.id,
     institutionId: row.institution_id,
     resourceType: row.resource_type,
     data: row.data ?? {},
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
   };
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function cleanString(value: unknown) {

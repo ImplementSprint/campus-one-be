@@ -6,16 +6,21 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { correlationIdMiddleware } from '../../../libs/observability/src/correlation-id.middleware';
+import { applyRequestSizeLimits } from './request-size-limits';
+import { createRateLimitMiddleware } from './rate-limit';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.enableCors({
     origin: process.env.FRONTEND_ORIGIN?.split(',') ?? true,
     credentials: true,
   });
+  applyRequestSizeLimits(app);
+  app.use(createRateLimitMiddleware());
   app.setGlobalPrefix('api');
   app.use(correlationIdMiddleware);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

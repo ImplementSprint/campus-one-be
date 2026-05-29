@@ -54,18 +54,24 @@ function isApprovedPlatformPath(path?: string): boolean {
   ].some((prefix) => normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`));
 }
 
+function isHealthPath(path?: string): boolean {
+  if (!path) return false;
+  const normalizedPath = path.startsWith('/api/') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
+  return normalizedPath === '/api/health' || normalizedPath.startsWith('/api/health/');
+}
+
 export function resolveTenantContext(input: TenantResolutionInput): TenantContext {
   const institutionId = input.institutionIdHeader?.trim() || undefined;
   const schoolSlug = normalizeSchoolSlug(input.schoolSlugHeader) || parseSchoolSlugFromHost(input.host);
-  const isPlatformRoute = !schoolSlug && isPlatformHost(input.host) && isApprovedPlatformPath(input.path);
+  const isPlatformRoute = isHealthPath(input.path) || (!schoolSlug && isPlatformHost(input.host) && isApprovedPlatformPath(input.path));
 
   return {
     institutionId,
-    schoolSlug,
+    schoolSlug: isHealthPath(input.path) ? undefined : schoolSlug,
     isPlatformRoute,
     source: input.schoolSlugHeader || institutionId
-      ? 'mobile-header'
-      : schoolSlug
+      ? isHealthPath(input.path) ? 'platform' : 'mobile-header'
+      : schoolSlug && !isHealthPath(input.path)
         ? 'subdomain'
         : isPlatformRoute
           ? 'platform'

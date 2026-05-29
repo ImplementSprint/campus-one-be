@@ -30,8 +30,53 @@ model InstitutionProfile {
   onboardingProgress OnboardingProgress?
   ownerInvitations SchoolOwnerInvitation[]
   auditEvents AuditEvent[]
+  schoolAdminProfile SchoolAdminProfile?
+  institutionResources InstitutionResource[]
+  schoolAdminDeliveries SchoolAdminDeliveryQueue[]
 
   @@map("institution_profiles")
+}
+
+model SchoolAdminProfile {
+  institutionId String   @id @map("institution_id") @db.Uuid
+  data          Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  institution InstitutionProfile @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@map("school_admin_profiles")
+}
+
+model InstitutionResource {
+  id            String   @id
+  institutionId String   @map("institution_id") @db.Uuid
+  resourceType  String   @map("resource_type")
+  data          Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  institution InstitutionProfile @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, resourceType], map: "institution_resources_institution_type_idx")
+  @@map("institution_resources")
+}
+
+model SchoolAdminDeliveryQueue {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  institutionId String   @map("institution_id") @db.Uuid
+  channel       String
+  template      String
+  recipient     String
+  actorId       String?  @map("actor_id")
+  payload       Json     @default("{}")
+  status        String   @default("queued")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  institution InstitutionProfile @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, createdAt], map: "school_admin_delivery_queue_institution_idx")
+  @@map("school_admin_delivery_queue")
 }
 
 model OnboardingProgress {

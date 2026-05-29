@@ -34,6 +34,17 @@ Legacy origin variables are still read as local-development fallback values, but
 |---|---|
 | `NODE_ENV` | `production` |
 | `PORT` | `4000` |
+| `REQUEST_JSON_LIMIT` | `1mb` |
+| `REQUEST_FORM_LIMIT` | `256kb` |
+| `RATE_LIMIT_ENABLED` | `true` |
+| `RATE_LIMIT_WINDOW_MS` | `60000` |
+| `RATE_LIMIT_AUTH_MAX` | `10` |
+| `RATE_LIMIT_SIGNUP_MAX` | `5` |
+| `RATE_LIMIT_SCHOOL_REGISTRATION_MAX` | `10` |
+| `RATE_LIMIT_APPLICANT_TRACKING_MAX` | `30` |
+| `RATE_LIMIT_FILE_SUBMISSION_MAX` | `10` |
+| `RATE_LIMIT_PAYMENT_CREATION_MAX` | `10` |
+| `RATE_LIMIT_OTP_MAX` | `5` |
 | `API_DOMAIN` | `api.itsandbox.site` |
 
 ## Runtime Validation

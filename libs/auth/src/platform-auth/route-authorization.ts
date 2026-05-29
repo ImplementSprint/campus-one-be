@@ -1,8 +1,10 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { getAccessTokenSecretForVerification } from './access-token-secret';
 
 export type AuthorizedRouteUser = {
   id: string;
+  email?: string | null;
   role: string;
   activeInstitutionId?: string | null;
   schoolSlug?: string | null;
@@ -19,6 +21,7 @@ export type RouteAuthorizationInput = {
 
 type VerifiedRouteToken = {
   sub: string;
+  email?: string | null;
   role: string;
   activeInstitutionId?: string | null;
 };
@@ -48,6 +51,7 @@ export function authorizeRoute(input: RouteAuthorizationInput): AuthorizedRouteU
 
   return {
     id: token.sub,
+    email: token.email ?? null,
     role: token.role,
     activeInstitutionId: token.activeInstitutionId ?? null,
     schoolSlug: input.schoolSlug ?? null,
@@ -55,10 +59,7 @@ export function authorizeRoute(input: RouteAuthorizationInput): AuthorizedRouteU
 }
 
 function verifyRouteAccessToken(token: string): VerifiedRouteToken {
-  const secret = process.env.CAMPUS_ONE_AUTH_SECRET;
-  if (!secret || secret.length < 16) {
-    throw new UnauthorizedException('Route token verification is not configured.');
-  }
+  const secret = getAccessTokenSecretForVerification();
 
   const [header, payload, signature] = token.split('.');
   if (!header || !payload || !signature) {
@@ -88,6 +89,7 @@ function verifyRouteAccessToken(token: string): VerifiedRouteToken {
 
   return {
     sub: String(parsed.sub),
+    email: parsed.email ? String(parsed.email) : null,
     role: String(parsed.role),
     activeInstitutionId: parsed.activeInstitutionId ?? null,
   };

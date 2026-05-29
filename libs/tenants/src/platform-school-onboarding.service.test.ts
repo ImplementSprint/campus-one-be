@@ -2,6 +2,7 @@ import { ConflictException, BadRequestException, NotFoundException } from '@nest
 import { createHash } from 'node:crypto';
 import { deepEqual, rejects, strictEqual } from 'node:assert/strict';
 import {
+  PostgresPlatformSchoolRegistrationRepository,
   PlatformSchoolOnboardingService,
   type PlatformSchoolOnboardingEmailNotifier,
   type PlatformSchoolRegistrationRepository,
@@ -197,6 +198,123 @@ class MemoryConfirmationEmailNotifier implements PlatformSchoolOnboardingEmailNo
   }
 }
 
+class SchemaCheckingClient {
+  readonly queries: Array<{ text: string; values?: unknown[] }> = [];
+  private readonly reviewRows = new Map<string, any>();
+
+  constructor(private readonly databaseName = 'tenant_registry') {}
+
+  async query(text: string, values?: unknown[]) {
+    this.queries.push({ text, values });
+    const normalized = text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+    if (normalized === 'begin' || normalized === 'commit' || normalized === 'rollback') return { rows: [] };
+    if (normalized.includes('insert into onboarding_progress') && normalized.includes('completed_steps')) {
+      throw new Error('onboarding_progress.completed_steps does not exist');
+    }
+    if (normalized.includes('insert into onboarding_progress') && normalized.includes('status')) {
+      throw new Error('onboarding_progress.status does not exist');
+    }
+    if (normalized.includes('update onboarding_progress') && normalized.includes('completed_steps')) {
+      throw new Error('onboarding_progress.completed_steps does not exist');
+    }
+    if (normalized.includes('update onboarding_progress') && normalized.includes('status')) {
+      throw new Error('onboarding_progress.status does not exist');
+    }
+    if (normalized.includes('insert into school_owner_invitations') && !normalized.includes('expires_at')) {
+      throw new Error('school_owner_invitations.expires_at is required');
+    }
+    if (normalized.includes('school_owner_invitations') && normalized.includes('accepted_at')) {
+      throw new Error('school_owner_invitations.accepted_at does not exist');
+    }
+    if (normalized.includes('insert into audit_events') && normalized.includes('action')) {
+      throw new Error('audit_events.action does not exist');
+    }
+    if (normalized.includes('insert into audit_events') && normalized.includes('actor_email')) {
+      throw new Error('audit_events.actor_email does not exist');
+    }
+    if (normalized.includes('json_build_object') && normalized.includes("'action', ae.action")) {
+      throw new Error('audit_events.action does not exist');
+    }
+    if (normalized.includes('json_build_object') && normalized.includes("'actoremail', ae.actor_email")) {
+      throw new Error('audit_events.actor_email does not exist');
+    }
+    if (normalized.includes('group by') && normalized.includes('op.status')) {
+      throw new Error('onboarding_progress.status does not exist');
+    }
+    if (this.databaseName === 'tenant_registry' && normalized.includes('insert into portal_accounts')) {
+      throw new Error('portal_accounts belongs to identity_access');
+    }
+    if (this.databaseName === 'tenant_registry' && normalized.includes('insert into school_owner_accounts')) {
+      throw new Error('school_owner_accounts belongs to identity_access');
+    }
+    if (this.databaseName === 'identity_access' && normalized.includes('insert into audit_events')) {
+      throw new Error('audit_events belongs to tenant_registry');
+    }
+
+    if (normalized.includes('insert into institution_profiles')) {
+      const row = {
+        id: values?.[0],
+        name: values?.[1],
+        representative: values?.[2],
+        contactEmail: values?.[3],
+        contactNumber: values?.[4],
+        schoolType: values?.[5],
+        targetSubdomain: values?.[6],
+        status: values?.[7],
+        ownerInvitationStatus: 'pending',
+        onboardingStatus: values?.[7],
+        approvedAt: null,
+        approvedBy: null,
+        rejectionReason: null,
+        auditTrail: [],
+      };
+      this.reviewRows.set(String(row.id), row);
+      return { rows: [row] };
+    }
+
+    if (normalized.includes('select id from institution_profiles')) {
+      return { rows: this.reviewRows.has(String(values?.[0])) ? [{ id: values?.[0] }] : [] };
+    }
+
+    if (normalized.includes('update institution_profiles')) {
+      const row = this.reviewRows.get(String(values?.[0]));
+      if (row) {
+        row.status = values?.[1];
+        row.approvedAt = values?.[2] ?? row.approvedAt;
+        row.approvedBy = values?.[3] ?? row.approvedBy;
+        row.rejectionReason = values?.[4] ?? row.rejectionReason;
+      }
+      return { rows: [] };
+    }
+
+    if (normalized.includes('update school_owner_invitations')) {
+      const row = this.reviewRows.get(String(values?.[0]));
+      if (row) row.ownerInvitationStatus = 'accepted';
+      return { rows: [{ institutionId: values?.[0], email: 'owner@schema.test' }] };
+    }
+
+    if (normalized.includes('update onboarding_progress')) {
+      return { rows: [] };
+    }
+
+    if (normalized.includes('from institution_profiles p')) {
+      const row = this.reviewRows.get(String(values?.[0]));
+      return { rows: row ? [{ ...row, auditTrail: [] }] : [] };
+    }
+
+    return { rows: [] };
+  }
+
+  release() {}
+}
+
+class SchemaCheckingPool extends SchemaCheckingClient {
+  async connect() {
+    return this;
+  }
+}
+
 async function main() {
   const repository = new MemoryRegistrationRepository();
   const service = new PlatformSchoolOnboardingService(repository);
@@ -348,7 +466,14 @@ async function main() {
   );
 
   const reviewRepository = new MemoryRegistrationRepository();
-  const reviewService = new PlatformSchoolOnboardingService(reviewRepository);
+  const reviewService = new PlatformSchoolOnboardingService(reviewRepository) as any;
+  const reviewEvents: unknown[] = [];
+  reviewService.eventPublisher = {
+    publish(input: unknown) {
+      reviewEvents.push(input);
+      return Promise.resolve({ envelope: input, published: true });
+    },
+  };
   const reviewRegistration = await reviewService.registerSchool({
     name: 'Review University',
     representative: 'Grace Tan',
@@ -378,6 +503,16 @@ async function main() {
   strictEqual(approved.approvedBy, 'admin-1');
   strictEqual(typeof approved.approvedAt, 'string');
   strictEqual(reviewRepository.auditEvents.at(-1)?.action, 'platform.school.approved');
+  deepEqual(reviewEvents.at(-1), {
+    eventType: 'school.review.approved',
+    tenantId: reviewRegistration.school.schoolId,
+    actorId: 'admin-1',
+    payload: {
+      schoolId: reviewRegistration.school.schoolId,
+      schoolSlug: 'review-u',
+      approverEmail: 'admin@campus.test',
+    },
+  });
 
   const rejectionRegistration = await reviewService.registerSchool({
     name: 'Reject University',
@@ -405,6 +540,16 @@ async function main() {
   strictEqual(rejected.onboardingStatus, 'rejected');
   strictEqual(rejected.rejectionReason, 'Incomplete legal documents');
   strictEqual(reviewRepository.auditEvents.at(-1)?.action, 'platform.school.rejected');
+  deepEqual(reviewEvents.at(-1), {
+    eventType: 'school.review.rejected',
+    tenantId: rejectionRegistration.school.schoolId,
+    actorId: 'admin@campus.test',
+    payload: {
+      schoolId: rejectionRegistration.school.schoolId,
+      schoolSlug: 'reject-u',
+      reason: 'Incomplete legal documents',
+    },
+  });
 
   const suspended = await reviewService.suspendSchool(reviewRegistration.school.schoolId, {
     actorEmail: 'admin@campus.test',
@@ -481,6 +626,66 @@ async function main() {
   });
   strictEqual(hashActivated.ownerInvitationStatus, 'accepted');
   strictEqual(hashActivated.next, 'tenant_portal_login');
+
+  const pgPool = new SchemaCheckingPool();
+  const pgIdentityPool = new SchemaCheckingPool('identity_access');
+  const pgRepository = new PostgresPlatformSchoolRegistrationRepository();
+  (pgRepository as any).pool = pgPool;
+  (pgRepository as any).identityPool = pgIdentityPool;
+
+  const pgRecord = await pgRepository.createRegistrationBundle({
+    school: {
+      id: '10000000-0000-0000-0000-000000000099',
+      name: 'Schema University',
+      representative: 'Schema Owner',
+      contactEmail: 'owner@schema.test',
+      contactNumber: '+63 900 000 0099',
+      schoolType: 'University',
+      targetSubdomain: 'schema-u',
+      status: 'pending_review',
+    },
+    onboardingProgress: {
+      institutionId: '10000000-0000-0000-0000-000000000099',
+      currentStep: 'owner_activation',
+      completedSteps: ['registration_submitted'],
+      status: 'pending_review',
+    },
+    ownerInvitation: {
+      institutionId: '10000000-0000-0000-0000-000000000099',
+      email: 'owner@schema.test',
+      tokenHash: 'a'.repeat(64),
+      status: 'pending',
+    },
+    auditEvent: {
+      institutionId: '10000000-0000-0000-0000-000000000099',
+      action: 'platform.school.registered',
+      actorEmail: 'owner@schema.test',
+      metadata: { schoolSlug: 'schema-u' },
+    },
+  });
+  strictEqual(pgRecord.targetSubdomain, 'schema-u');
+
+  const pgApproved = await pgRepository.approveSchoolReview('10000000-0000-0000-0000-000000000099', {
+    approverId: '20000000-0000-0000-0000-000000000099',
+    approverEmail: 'admin@schema.test',
+    approvedAt: '2026-05-25T00:00:00.000Z',
+  });
+  strictEqual(pgApproved?.school.status, 'approved');
+
+  const pgActivated = await pgRepository.acceptOwnerInvitation({
+    institutionId: '10000000-0000-0000-0000-000000000099',
+    tokenHash: 'a'.repeat(64),
+    acceptedAt: '2026-05-25T01:00:00.000Z',
+    ownerAccount: {
+      id: '30000000-0000-0000-0000-000000000099',
+      institutionId: '10000000-0000-0000-0000-000000000099',
+      email: 'owner@schema.test',
+      passwordHash: 'scrypt$salt$hash',
+      role: 'school_owner',
+    },
+  });
+  strictEqual(pgActivated?.ownerInvitationStatus, 'accepted');
+  strictEqual(pgIdentityPool.queries.some((query) => query.text.includes('insert into portal_accounts')), true);
 }
 
 main().catch((error) => {

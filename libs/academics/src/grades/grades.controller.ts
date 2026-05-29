@@ -17,7 +17,7 @@ export class GradesController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     this.authorizeProfessor(authorization, role, userId, institutionId, schoolSlug);
-    try { return await this.gradesService.getProfessorGradebook(professorId, classAssignmentId); }
+    try { return await this.gradesService.getProfessorGradebook(professorId, classAssignmentId, institutionId); }
     catch (e: any) { throw new HttpException(e.message, e.status || HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
@@ -53,7 +53,7 @@ export class GradesController {
       throw new BadRequestException('Missing required fields: professorId, enrollmentId, finalGrade, letterGrade, and remarks');
     }
 
-    try { return await this.gradesService.submitProfessorGrade(body); }
+    try { return await this.gradesService.submitProfessorGrade(body, institutionId); }
     catch (e: any) { throw new HttpException(e.message, e.status || HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
@@ -67,7 +67,7 @@ export class GradesController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     this.authorizeStudent(authorization, role, routeUserId, institutionId, schoolSlug);
-    try { return await this.gradesService.getSummary(userId); }
+    try { return await this.gradesService.getSummary(userId, institutionId); }
     catch (e: any) { throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
@@ -82,7 +82,7 @@ export class GradesController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     this.authorizeStudent(authorization, role, routeUserId, institutionId, schoolSlug);
-    try { return await this.gradesService.getTermSummary(userId, term); }
+    try { return await this.gradesService.getTermSummary(userId, term, institutionId); }
     catch (e: any) { throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 
@@ -96,7 +96,7 @@ export class GradesController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     this.authorizeStudent(authorization, role, routeUserId, institutionId, schoolSlug);
-    try { return await this.gradesService.getGrades(userId); }
+    try { return await this.gradesService.getGrades(userId, institutionId); }
     catch (e: any) { throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR); }
   }
 

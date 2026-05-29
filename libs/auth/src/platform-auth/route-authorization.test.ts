@@ -7,12 +7,13 @@ import { authorizeRoute } from './route-authorization';
 function signTestToken(payload: Record<string, unknown>) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = createHmac('sha256', process.env.CAMPUS_ONE_AUTH_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
+  const signature = createHmac('sha256', process.env.JWT_ACCESS_TOKEN_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
 function run() {
-  process.env.CAMPUS_ONE_AUTH_SECRET = 'test-secret-with-enough-length';
+  delete process.env.CAMPUS_ONE_AUTH_SECRET;
+  process.env.JWT_ACCESS_TOKEN_SECRET = 'test-secret-with-enough-length';
 
   const user = authorizeRoute({
     authorization: `Bearer ${signTestToken({ sub: 'admin-1', role: 'alumni_admin', activeInstitutionId: 'school-a' })}`,

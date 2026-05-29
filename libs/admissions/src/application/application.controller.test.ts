@@ -8,14 +8,26 @@ let serviceCalls = 0;
 let trackPayload: { email: string; referenceNumber: string } | undefined;
 let statusPayload: { email: string; referenceNumber: string } | undefined;
 let accessPayload: { email: string; referenceNumber: string } | undefined;
+let createPayload: { email: string; institutionId?: string } | undefined;
+let submitPayload: { applicantId: string; institutionId?: string } | undefined;
 let adminStatusPayload:
-  | { applicationId: string; status: string; options?: { rejectionReason?: string; acceptanceLetterUrl?: string } }
+  | { applicationId: string; status: string; options?: { rejectionReason?: string; acceptanceLetterUrl?: string }; institutionId?: string }
   | undefined;
 let adminProgramPayload:
-  | { applicationId: string; department: string; program: string }
+  | { applicationId: string; department: string; program: string; institutionId?: string }
   | undefined;
 
 const service = {
+  createApplicantProfile(dto: any, institutionId?: string) {
+    serviceCalls += 1;
+    createPayload = { email: dto.email, institutionId };
+    return { success: true, id: 'app-1' };
+  },
+  submitApplication(applicantId: string, institutionId?: string) {
+    serviceCalls += 1;
+    submitPayload = { applicantId, institutionId };
+    return { success: true, reference_number: 'APP-1' };
+  },
   trackApplication(email: string, referenceNumber: string) {
     serviceCalls += 1;
     trackPayload = { email, referenceNumber };
@@ -31,14 +43,14 @@ const service = {
     accessPayload = { email, referenceNumber };
     return { success: true, allowed: true };
   },
-  updateAdminApplicationStatus(applicationId: string, status: string, options?: { rejectionReason?: string; acceptanceLetterUrl?: string }) {
+  updateAdminApplicationStatus(applicationId: string, status: string, options?: { rejectionReason?: string; acceptanceLetterUrl?: string }, institutionId?: string) {
     serviceCalls += 1;
-    adminStatusPayload = { applicationId, status, options };
+    adminStatusPayload = { applicationId, status, options, institutionId };
     return { success: true, status };
   },
-  updateAdminProgramSelection(applicationId: string, department: string, program: string) {
+  updateAdminProgramSelection(applicationId: string, department: string, program: string, institutionId?: string) {
     serviceCalls += 1;
-    adminProgramPayload = { applicationId, department, program };
+    adminProgramPayload = { applicationId, department, program, institutionId };
     return { success: true, department, program };
   },
 };
@@ -80,6 +92,14 @@ async function run() {
 
   const controller = new ApplicationController(service as any);
 
+  const createResult = controller.createApplicantProfile({ email: 'applicant@example.com' }, 'school-a');
+  equal((createResult as any).id, 'app-1');
+  equal(createPayload?.institutionId, 'school-a');
+
+  const submitResult = controller.submitApplication('app-1', 'school-a');
+  equal((submitResult as any).reference_number, 'APP-1');
+  equal(submitPayload?.institutionId, 'school-a');
+
   const trackResult = controller.trackApplication({ email: 'applicant@example.com', referenceNumber: 'APP-123' });
   equal((trackResult as any).action, 'tracked');
   equal(trackPayload?.email, 'applicant@example.com');
@@ -98,20 +118,22 @@ async function run() {
   const adminStatusResult = controller.updateAdminApplicationStatus('application-123', {
     status: 'Not Accepted',
     rejectionReason: 'Incomplete requirements',
-  });
+  }, 'school-a');
   equal((adminStatusResult as any).status, 'Not Accepted');
   equal(adminStatusPayload?.applicationId, 'application-123');
   equal(adminStatusPayload?.status, 'Not Accepted');
   equal(adminStatusPayload?.options?.rejectionReason, 'Incomplete requirements');
+  equal(adminStatusPayload?.institutionId, 'school-a');
 
   const adminProgramResult = controller.updateAdminProgramSelection('application-123', {
     department: 'Engineering',
     program: 'BS Computer Engineering',
-  });
+  }, 'school-a');
   equal((adminProgramResult as any).program, 'BS Computer Engineering');
   equal(adminProgramPayload?.applicationId, 'application-123');
   equal(adminProgramPayload?.department, 'Engineering');
   equal(adminProgramPayload?.program, 'BS Computer Engineering');
+  equal(adminProgramPayload?.institutionId, 'school-a');
 
   await expectBadRequest(
     () => controller.trackApplication({ email: ' ', referenceNumber: 'APP-123' }),
@@ -142,7 +164,7 @@ async function run() {
     'applicationId, department, and program are required',
   );
 
-  equal(serviceCalls, 5);
+  equal(serviceCalls, 7);
 }
 
 run().catch((error) => {

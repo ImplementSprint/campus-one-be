@@ -14,6 +14,7 @@ import type {
   SchoolSlugAvailabilityResponse,
 } from '@campus-one/contracts';
 import { createHash, randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { DomainEventType, domainEventPublisher, tryPublishDomainEvent } from '../../events/src/domain-events';
 
 const RESERVED_SCHOOL_SLUGS = new Set(['api', 'app', 'www', 'admin', 'status', 'portal', 'campus', 'localhost']);
 
@@ -104,6 +105,7 @@ export const PLATFORM_SCHOOL_ONBOARDING_EMAIL_NOTIFIER = Symbol('PLATFORM_SCHOOL
 
 export class PostgresPlatformSchoolRegistrationRepository implements PlatformSchoolRegistrationRepository {
   private pool: any;
+  private identityPool: any;
 
   async findBySlug(slug: string): Promise<SchoolRegistrationRecord | null> {
     const result = await this.query(
@@ -170,21 +172,20 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
 
       await client.query(
         `
-          insert into onboarding_progress (institution_id, current_step, completed_steps, status)
-          values ($1, $2, $3, $4)
+          insert into onboarding_progress (institution_id, current_step, progress)
+          values ($1, $2, $3)
         `,
         [
           bundle.onboardingProgress.institutionId,
           bundle.onboardingProgress.currentStep,
-          JSON.stringify(bundle.onboardingProgress.completedSteps),
-          bundle.onboardingProgress.status,
+          10,
         ],
       );
 
       await client.query(
         `
-          insert into school_owner_invitations (institution_id, email, token_hash, status)
-          values ($1, $2, $3, $4)
+          insert into school_owner_invitations (institution_id, email, token_hash, status, expires_at)
+          values ($1, $2, $3, $4, now() + interval '14 days')
         `,
         [
           bundle.ownerInvitation.institutionId,
@@ -196,14 +197,16 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
 
       await client.query(
         `
-          insert into audit_events (institution_id, action, actor_email, metadata)
-          values ($1, $2, $3, $4)
+          insert into audit_events (institution_id, event_type, metadata)
+          values ($1, $2, $3::jsonb)
         `,
         [
           bundle.auditEvent.institutionId,
           bundle.auditEvent.action,
-          bundle.auditEvent.actorEmail,
-          JSON.stringify(bundle.auditEvent.metadata),
+          JSON.stringify({
+            ...bundle.auditEvent.metadata,
+            actorEmail: bundle.auditEvent.actorEmail ?? null,
+          }),
         ],
       );
 
@@ -292,10 +295,11 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
           email,
           token_hash as "tokenHash",
           status,
-          accepted_at as "acceptedAt"
+          null as "acceptedAt"
         from school_owner_invitations
         where token_hash = $1
           and status = 'pending'
+          and expires_at > now()
         limit 1
       `,
       [tokenHash],
@@ -311,13 +315,15 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
     ownerAccount: SchoolOwnerAccountRecord;
   }): Promise<SchoolReviewRecord | null> {
     const client = await this.getPool().connect();
+    let identityClient: any | null = null;
+    let identityCommitted = false;
     try {
       await client.query('begin');
 
       const invitationResult = await client.query(
         `
           update school_owner_invitations
-          set status = 'accepted', accepted_at = $3
+          set status = 'accepted', updated_at = $3
           where institution_id = $1
             and token_hash = $2
             and status = 'pending'
@@ -332,7 +338,10 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
         return null;
       }
 
-      await client.query(
+      identityClient = await this.getIdentityPool().connect();
+      await identityClient.query('begin');
+
+      await identityClient.query(
         `
           insert into portal_accounts (id, email, password_hash)
           values ($1, $2, $3)
@@ -340,7 +349,7 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
         [input.ownerAccount.id, input.ownerAccount.email, input.ownerAccount.passwordHash],
       );
 
-      await client.query(
+      await identityClient.query(
         `
           insert into school_owner_accounts (id, institution_id, email, role)
           values ($1, $2, $3, $4)
@@ -353,15 +362,15 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
         ],
       );
 
+      await identityClient.query('commit');
+      identityCommitted = true;
+
       await client.query(
         `
           update onboarding_progress
           set
             current_step = 'owner_account_created',
-            completed_steps = case
-              when completed_steps ? 'owner_account_created' then completed_steps
-              else completed_steps || '["owner_invitation_accepted", "owner_account_created"]'::jsonb
-            end,
+            progress = greatest(progress, 60),
             updated_at = now()
           where institution_id = $1
         `,
@@ -370,14 +379,22 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
 
       await client.query(
         `
-          insert into audit_events (institution_id, action, actor_email, metadata, created_at)
-          values ($1, $2, $3, $4, $5)
+          update institution_profiles
+          set setup_progress = greatest(setup_progress, 60)
+          where id = $1
+        `,
+        [input.institutionId],
+      );
+
+      await client.query(
+        `
+          insert into audit_events (institution_id, event_type, metadata, created_at)
+          values ($1, $2, $3::jsonb, $4)
         `,
         [
           input.institutionId,
           'platform.school.owner_account_created',
-          invitation.email,
-          JSON.stringify({ next: 'tenant_portal_login' }),
+          JSON.stringify({ actorEmail: invitation.email, next: 'tenant_portal_login' }),
           input.acceptedAt,
         ],
       );
@@ -385,9 +402,11 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
       await client.query('commit');
       return this.findReviewRecordById(input.institutionId);
     } catch (error) {
+      if (identityClient && !identityCommitted) await identityClient.query('rollback').catch(() => undefined);
       await client.query('rollback');
       throw error;
     } finally {
+      if (identityClient) identityClient.release();
       client.release();
     }
   }
@@ -426,27 +445,35 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
             status = $2,
             approved_at = coalesce($3, approved_at),
             approved_by = coalesce($4, approved_by),
-            rejection_reason = $5
+            rejection_reason = $5,
+            setup_progress = greatest(setup_progress, $6)
           where id = $1
         `,
-        [id, input.status, input.approvedAt, input.approvedBy, input.rejectionReason],
+        [id, input.status, input.approvedAt, input.approvedBy, input.rejectionReason, this.progressForStep(input.currentStep)],
       );
 
       await client.query(
         `
           update onboarding_progress
-          set current_step = $2, completed_steps = $3, status = $4, updated_at = now()
+          set current_step = $2, progress = $3, updated_at = now()
           where institution_id = $1
         `,
-        [id, input.currentStep, JSON.stringify(input.completedSteps), input.status],
+        [id, input.currentStep, this.progressForStep(input.currentStep)],
       );
 
       await client.query(
         `
-          insert into audit_events (institution_id, action, actor_email, metadata)
-          values ($1, $2, $3, $4)
+          insert into audit_events (institution_id, event_type, metadata)
+          values ($1, $2, $3::jsonb)
         `,
-        [id, input.action, input.actorEmail ?? null, JSON.stringify(input.metadata)],
+        [
+          id,
+          input.action,
+          JSON.stringify({
+            ...input.metadata,
+            actorEmail: input.actorEmail ?? null,
+          }),
+        ],
       );
 
       await client.query('commit');
@@ -473,13 +500,13 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
         p.approved_at as "approvedAt",
         p.approved_by as "approvedBy",
         p.rejection_reason as "rejectionReason",
-        op.status as "onboardingStatus",
+        p.status as "onboardingStatus",
         oi.status as "ownerInvitationStatus",
         coalesce(
           json_agg(
             json_build_object(
-              'action', ae.action,
-              'actorEmail', ae.actor_email,
+              'action', ae.event_type,
+              'actorEmail', ae.metadata ->> 'actorEmail',
               'metadata', ae.metadata,
               'createdAt', ae.created_at
             )
@@ -498,7 +525,7 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
       ) oi on true
       left join audit_events ae on ae.institution_id = p.id
       ${whereClause}
-      group by p.id, op.status, oi.status
+      group by p.id, oi.status
     `;
   }
 
@@ -541,6 +568,27 @@ export class PostgresPlatformSchoolRegistrationRepository implements PlatformSch
     }
 
     return this.pool;
+  }
+
+  private getIdentityPool() {
+    if (!this.identityPool) {
+      const databaseUrl = process.env.IDENTITY_ACCESS_DATABASE_URL;
+      if (!databaseUrl) {
+        throw new Error('IDENTITY_ACCESS_DATABASE_URL must be configured for owner activation.');
+      }
+
+      const { Pool } = require('pg');
+      this.identityPool = new Pool({ connectionString: databaseUrl });
+    }
+
+    return this.identityPool;
+  }
+
+  private progressForStep(step: string) {
+    if (step === 'owner_account_created') return 60;
+    if (step === 'owner_activation') return 40;
+    if (step === 'suspended') return 0;
+    return 20;
   }
 }
 
@@ -593,6 +641,8 @@ function requireReviewRecord(record: SchoolReviewRecord | null): SchoolReviewRec
 
 @Injectable()
 export class PlatformSchoolOnboardingService {
+  private readonly eventPublisher = domainEventPublisher;
+
   constructor(
     @Inject(PLATFORM_SCHOOL_REGISTRATION_REPOSITORY)
     private readonly repository: PlatformSchoolRegistrationRepository = new PostgresPlatformSchoolRegistrationRepository(),
@@ -660,6 +710,12 @@ export class PlatformSchoolOnboardingService {
       schoolSlug: record.targetSubdomain,
       schoolName: record.name,
       nextStep: 'platform_review',
+    });
+    await this.publishSchoolEvent('school.registration.submitted', record, email, {
+      schoolId: record.id,
+      schoolSlug: record.targetSubdomain,
+      schoolName: record.name,
+      schoolType: record.schoolType,
     });
 
     return {
@@ -737,41 +793,80 @@ export class PlatformSchoolOnboardingService {
 
   async approveSchool(id: string, input: SchoolApproveRequest): Promise<SchoolReviewRecord> {
     const approverId = validateRequired(input.approverId, 'Approver id');
-    return requireReviewRecord(
+    const record = requireReviewRecord(
       await this.repository.approveSchoolReview(id, {
         approverId,
         approverEmail: input.approverEmail?.trim() || undefined,
         approvedAt: new Date().toISOString(),
       }),
     );
+    await this.publishSchoolEvent('school.review.approved', record.school, approverId, {
+      schoolId: record.school.schoolId,
+      schoolSlug: record.school.schoolSlug,
+      approverEmail: input.approverEmail?.trim() || null,
+    });
+    return record;
   }
 
   async rejectSchool(id: string, input: SchoolReviewActionRequest): Promise<SchoolReviewRecord> {
     const reason = validateRequired(input.reason, 'Rejection reason');
-    return requireReviewRecord(
+    const record = requireReviewRecord(
       await this.repository.rejectSchoolReview(id, {
         actorEmail: input.actorEmail?.trim() || undefined,
         reason,
       }),
     );
+    await this.publishSchoolEvent('school.review.rejected', record.school, input.actorEmail?.trim() || null, {
+      schoolId: record.school.schoolId,
+      schoolSlug: record.school.schoolSlug,
+      reason,
+    });
+    return record;
   }
 
   async suspendSchool(id: string, input: SchoolReviewActionRequest): Promise<SchoolReviewRecord> {
-    return requireReviewRecord(
+    const record = requireReviewRecord(
       await this.repository.suspendSchool(id, {
         actorEmail: input.actorEmail?.trim() || undefined,
         reason: input.reason?.trim() || undefined,
       }),
     );
+    await this.publishSchoolEvent('school.review.suspended', record.school, input.actorEmail?.trim() || null, {
+      schoolId: record.school.schoolId,
+      schoolSlug: record.school.schoolSlug,
+      reason: input.reason?.trim() || null,
+    });
+    return record;
   }
 
   async reactivateSchool(id: string, input: SchoolReviewActionRequest): Promise<SchoolReviewRecord> {
-    return requireReviewRecord(
+    const record = requireReviewRecord(
       await this.repository.reactivateSchool(id, {
         actorEmail: input.actorEmail?.trim() || undefined,
         reason: input.reason?.trim() || undefined,
       }),
     );
+    await this.publishSchoolEvent('school.review.reactivated', record.school, input.actorEmail?.trim() || null, {
+      schoolId: record.school.schoolId,
+      schoolSlug: record.school.schoolSlug,
+      reason: input.reason?.trim() || null,
+    });
+    return record;
+  }
+
+  private async publishSchoolEvent(
+    eventType: DomainEventType,
+    school: SchoolRegistrationRecord | SchoolReviewRecord['school'],
+    actorId: string | null,
+    payload: Record<string, unknown>,
+  ) {
+    const schoolId = 'id' in school ? school.id : school.schoolId;
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType,
+      tenantId: schoolId,
+      actorId,
+      payload,
+    });
   }
 
   private resolveOwnerActivationTokenHash(input: SchoolOwnerActivationRequest): string {

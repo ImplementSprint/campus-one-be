@@ -7,4 +7,71 @@ datasource db {
   provider = "postgresql"
 }
 
-// Admissions domain models will be added during the service migration.
+model AdmissionApplicant {
+  id                     String    @id
+  institutionId          String    @map("institution_id") @db.Uuid
+  email                  String
+  schoolLevel            String?   @map("school_level")
+  applicantType          String?   @map("applicant_type")
+  firstName              String?   @map("first_name")
+  lastName               String?   @map("last_name")
+  middleName             String?   @map("middle_name")
+  fullName               String?   @map("full_name")
+  birthdate              DateTime? @db.Date
+  mobileNumber           String?   @map("mobile_number")
+  address                String?
+  status                 String    @default("Draft")
+  referenceNumber        String    @map("reference_number")
+  applicantNumber        String?   @map("applicant_number")
+  program                String?
+  rejectionReason        String?   @map("rejection_reason")
+  acceptanceLetterUrl    String?   @map("acceptance_letter_url")
+  applicationSubmittedAt DateTime? @map("application_submitted_at") @db.Timestamptz(6)
+  reviewedAt             DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  isEnrolled             Boolean   @default(false) @map("is_enrolled")
+  enrolledAt             DateTime? @map("enrolled_at") @db.Timestamptz(6)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  programSelection AdmissionProgramSelection?
+  activityLogs      AdmissionActivityLog[]
+
+  @@unique([institutionId, referenceNumber], map: "admission_applicants_institution_reference_key")
+  @@index([institutionId, email], map: "admission_applicants_institution_email_idx")
+  @@index([institutionId, status], map: "admission_applicants_institution_status_idx")
+  @@map("admission_applicants")
+}
+
+model AdmissionProgramSelection {
+  id                String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  institutionId     String   @map("institution_id") @db.Uuid
+  applicantId       String   @unique(map: "admission_program_selections_applicant_id_key") @map("applicant_id")
+  schoolLevel       String?  @map("school_level")
+  collegeProgram    String?  @map("college_program")
+  collegeDepartment String?  @map("college_department")
+  seniorHighTrack   String?  @map("senior_high_track")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  applicant AdmissionApplicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@unique([institutionId, applicantId], map: "admission_program_selections_institution_applicant_key")
+  @@index([institutionId], map: "admission_program_selections_institution_idx")
+  @@map("admission_program_selections")
+}
+
+model AdmissionActivityLog {
+  id            String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  institutionId String   @map("institution_id") @db.Uuid
+  applicantId   String   @map("applicant_id")
+  eventType     String   @map("event_type")
+  actorEmail    String?  @map("actor_email")
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  applicant AdmissionApplicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, applicantId], map: "admission_activity_logs_applicant_idx")
+  @@index([institutionId, eventType], map: "admission_activity_logs_event_idx")
+  @@map("admission_activity_logs")
+}

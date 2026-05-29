@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { supabase } from '@campus-one/database/supabase';
+import { redactLogError } from '../../observability/src/log-redaction';
 
 export type AuditEventInput = {
   action: string;
@@ -28,10 +29,10 @@ export class AuditService {
         actor_email: input.actor,
         metadata,
         created_at: new Date().toISOString(),
-      });
+    });
 
     if (error) {
-      this.logger.warn(`audit event skipped: ${error.message}`);
+      this.logger.warn(`audit event skipped: ${redactLogError(error)}`);
       return { recorded: false, error: error.message };
     }
 
@@ -47,7 +48,7 @@ export class AuditService {
       .limit(boundedLimit);
 
     if (error) {
-      this.logger.warn(`audit event list failed: ${error.message}`);
+      this.logger.warn(`audit event list failed: ${redactLogError(error)}`);
       throw new Error(error.message);
     }
 

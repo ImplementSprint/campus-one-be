@@ -10,14 +10,14 @@ import { DocumentType } from './interfaces/alumni.interface';
 let serviceCalls = 0;
 let requestedRecordPayload: unknown;
 let calculatedFee: { documentType: DocumentType; copies?: number } | undefined;
-let statusUpdate: { logId: string; statusCode: number; paymentStatus?: string } | undefined;
-let cardStatusUpdate: { logId: string; statusCode: number; paymentStatus?: string } | undefined;
-process.env.CAMPUS_ONE_AUTH_SECRET = 'test-secret-with-enough-length';
+let statusUpdate: { logId: string; statusCode: number; paymentStatus?: string; institutionId?: string } | undefined;
+let cardStatusUpdate: { logId: string; statusCode: number; paymentStatus?: string; institutionId?: string } | undefined;
+process.env.JWT_ACCESS_TOKEN_SECRET = 'test-secret-with-enough-length';
 
 function signTestToken(payload: Record<string, unknown>) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = createHmac('sha256', process.env.CAMPUS_ONE_AUTH_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
+  const signature = createHmac('sha256', process.env.JWT_ACCESS_TOKEN_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
@@ -34,18 +34,18 @@ const service = {
     calculatedFee = { documentType, copies };
     return { document_type: documentType, number_of_copies: copies ?? 1, total_amount: 150, payment_mode: 'manual' };
   },
-  async updateRecordStatus(logId: string, statusCode: number, paymentStatus?: string) {
+  async updateRecordStatus(logId: string, statusCode: number, paymentStatus?: string, institutionId?: string) {
     serviceCalls += 1;
-    statusUpdate = { logId, statusCode, paymentStatus };
+    statusUpdate = { logId, statusCode, paymentStatus, institutionId };
     return { success: true, status_code: statusCode, payment_status: paymentStatus, notification: { type: 'alumni_request_status_updated' } };
   },
-  async getAllCardApplications() {
+  async getAllCardApplications(institutionId?: string) {
     serviceCalls += 1;
-    return [{ log_id: 'card-log-123' }];
+    return [{ log_id: 'card-log-123', institution_id: institutionId }];
   },
-  async updateCardApplicationStatus(logId: string, statusCode: number, paymentStatus?: string) {
+  async updateCardApplicationStatus(logId: string, statusCode: number, paymentStatus?: string, institutionId?: string) {
     serviceCalls += 1;
-    cardStatusUpdate = { logId, statusCode, paymentStatus };
+    cardStatusUpdate = { logId, statusCode, paymentStatus, institutionId };
     return { success: true, status_code: statusCode, payment_status: paymentStatus, notification: { type: 'alumni_card_status_updated' } };
   },
   async getCommunicationLog(actorUuid: string) {
@@ -122,9 +122,11 @@ async function run() {
   equal(statusUpdate?.logId, 'record-log-123');
   equal(statusUpdate?.statusCode, 200);
   equal(statusUpdate?.paymentStatus, 'paid');
+  equal(statusUpdate?.institutionId, 'school-a');
 
   const cardList = await controller.adminCardRequests(...authArgs);
   equal((cardList as any[]).length, 1);
+  equal((cardList as any[])[0].institution_id, 'school-a');
 
   const cardStatusResult = await controller.adminUpdateCardRequest('card-log-123', { status_code: 300, payment_status: 'paid' }, ...authArgs);
   equal((cardStatusResult as any).status_code, 300);
@@ -133,6 +135,7 @@ async function run() {
   equal(cardStatusUpdate?.logId, 'card-log-123');
   equal(cardStatusUpdate?.statusCode, 300);
   equal(cardStatusUpdate?.paymentStatus, 'paid');
+  equal(cardStatusUpdate?.institutionId, 'school-a');
 
   await expectBadRequest(
     () => (controller.requestRecord as any)({

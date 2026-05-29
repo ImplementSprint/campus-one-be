@@ -16,6 +16,14 @@ function run() {
   equal(summary.gwa, '2.75');
   equal(summary.status, 'has_deficiencies');
 
+  const percentageSummary = summarizeGrades([
+    { units: 3, grade: '91', remarks: 'Passed' },
+  ]);
+  equal(percentageSummary.failedUnits, 0);
+  equal(percentageSummary.passedUnits, 3);
+  equal(percentageSummary.gwa, '91.00');
+  equal(percentageSummary.status, 'good_standing');
+
   const empty = summarizeGrades([]);
   equal(empty.totalUnits, 0);
   equal(empty.gwa, '0.00');

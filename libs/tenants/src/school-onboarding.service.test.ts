@@ -44,7 +44,14 @@ class FakeTenantRegistryRepository {
 
 async function run() {
   const repository = new FakeTenantRegistryRepository();
-  const service = new SchoolOnboardingService(repository as any);
+  const service = new SchoolOnboardingService(repository as any) as any;
+  const eventCalls: unknown[] = [];
+  service.eventPublisher = {
+    publish(input: unknown) {
+      eventCalls.push(input);
+      return Promise.resolve({ envelope: input, published: true });
+    },
+  };
 
   const response = await service.registerSchool({
     name: ' Demo University ',
@@ -64,6 +71,19 @@ async function run() {
   assert.equal(repository.createdInput.institution.email, 'owner@demo.edu');
   assert.equal(repository.createdInput.invitation.tokenHash.length, 64);
   assert.equal(repository.createdInput.audit.eventType, 'platform.school.registered');
+  assert.deepEqual(eventCalls, [
+    {
+      eventType: 'school.registration.submitted',
+      tenantId: response.school.schoolId,
+      actorId: 'owner@demo.edu',
+      payload: {
+        schoolId: response.school.schoolId,
+        schoolSlug: 'demo-school',
+        schoolName: 'Demo University',
+        schoolType: 'University',
+      },
+    },
+  ]);
 
   await assert.rejects(
     () => service.registerSchool({

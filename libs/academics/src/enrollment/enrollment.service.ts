@@ -1,9 +1,13 @@
 ﻿import { Injectable, BadRequestException } from '@nestjs/common';
 import { supabase } from '@campus-one/database/supabase';
+import { PostgresAcademicsRepository } from '../academics-postgres.repository';
+import { domainEventPublisher, tryPublishDomainEvent } from '../../../events/src/domain-events';
 
 @Injectable()
 export class EnrollmentService {
   private readonly db = supabase.schema('enrollment');
+  private readonly postgres = new PostgresAcademicsRepository();
+  private readonly eventPublisher = domainEventPublisher;
 
   async getHistory(studentId: string) {
     const studentDb = supabase.schema('student');
@@ -29,7 +33,16 @@ export class EnrollmentService {
     }));
   }
 
-  async getOfferings(studentId?: string, program?: string, yearLevel?: string) {
+  async getOfferings(studentId?: string, program?: string, yearLevel?: string, institutionId?: string) {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.listOfferings({
+        institutionId: institutionId!,
+        studentId,
+        program,
+        yearLevel: yearLevel ? parseInt(yearLevel) : undefined,
+      });
+    }
+
     let studentProgram = program;
     let studentYearLevel = yearLevel ? parseInt(yearLevel) : undefined;
     const studentDb = supabase.schema('student');
@@ -89,11 +102,20 @@ export class EnrollmentService {
     });
   }
 
-  async submit(studentId: string, classAssignmentIds: string[]) {
+  async submit(studentId: string, classAssignmentIds: string[], institutionId?: string) {
     if (!studentId || !classAssignmentIds?.length)
       throw new BadRequestException('Missing required fields: studentId and classAssignmentIds');
     if (findDuplicateClassAssignmentIds(classAssignmentIds).length)
       throw new BadRequestException('Duplicate class selections are not allowed');
+    if (this.usePostgres(institutionId)) {
+      const result = await this.postgres.submitEnrollment({
+        institutionId: institutionId!,
+        studentId,
+        classAssignmentIds,
+      });
+      await this.publishEnrollmentSubmittedEvent(studentId, classAssignmentIds, institutionId!, result?.count ?? classAssignmentIds.length);
+      return result;
+    }
 
     const { data: existing } = await this.db
       .from('class_enrollments').select('class_assignment_id')
@@ -131,7 +153,9 @@ export class EnrollmentService {
         class_assignments!inner(section, schedule, room, subjects!inner(code, name, units))`);
     if (error) throw new Error(error.message);
 
-    return { success: true, message: 'Successfully enrolled in classes', enrollments: data, count: data?.length || 0 };
+    const count = data?.length || 0;
+    await this.publishEnrollmentSubmittedEvent(studentId, classAssignmentIds, institutionId ?? null, count);
+    return { success: true, message: 'Successfully enrolled in classes', enrollments: data, count };
   }
 
   async addDrop(payload: {
@@ -229,7 +253,11 @@ export class EnrollmentService {
     };
   }
 
-  async getStatus(studentId: string) {
+  async getStatus(studentId: string, institutionId?: string) {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.getEnrollmentStatus(institutionId!, studentId);
+    }
+
     const { data: enrollments, error } = await this.db
       .from('class_enrollments')
       .select(`id, enrollment_status, enrolled_at, class_assignment_id,
@@ -268,6 +296,28 @@ export class EnrollmentService {
         metadata,
         created_at: new Date().toISOString(),
       });
+  }
+
+  private usePostgres(institutionId?: string) {
+    return Boolean(institutionId?.trim() && process.env.ACADEMICS_DATABASE_URL?.trim());
+  }
+
+  private async publishEnrollmentSubmittedEvent(
+    studentId: string,
+    classAssignmentIds: string[],
+    institutionId: string | null,
+    enrollmentCount: number,
+  ) {
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'enrollment.submitted',
+      tenantId: institutionId,
+      actorId: studentId,
+      payload: {
+        studentId,
+        classAssignmentIds,
+        enrollmentCount,
+      },
+    });
   }
 }
 

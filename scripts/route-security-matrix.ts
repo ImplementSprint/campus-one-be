@@ -14,7 +14,7 @@ type MatrixCase = {
   expectedStatus: number;
 };
 
-process.env.CAMPUS_ONE_AUTH_SECRET ||= 'route-security-secret-local';
+process.env.JWT_ACCESS_TOKEN_SECRET ||= 'route-security-secret-local';
 TenantResolutionService.prototype.resolveTenantContext = async function resolveMatrixTenantContext(context) {
   if (context.isPlatformRoute || (!context.schoolSlug && !context.institutionId)) return context;
   const id = context.institutionId ?? context.schoolSlug ?? 'school-a';
@@ -36,7 +36,7 @@ TenantResolutionService.prototype.resolveTenantContext = async function resolveM
 function signMatrixToken(payload: Record<string, unknown>) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = createHmac('sha256', process.env.CAMPUS_ONE_AUTH_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
+  const signature = createHmac('sha256', process.env.JWT_ACCESS_TOKEN_SECRET ?? '').update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
@@ -66,8 +66,14 @@ const studentHeaders = {
 
 const routeSecurityCases: MatrixCase[] = [
   { name: 'backend health is explicitly anonymous', path: '/api/health', expectedStatus: 200 },
+  { name: 'database health rejects anonymous access', path: '/api/health/db', expectedStatus: 401 },
+  { name: 'database health rejects non-super-admin role', path: '/api/health/db', headers: alumniAdminHeaders, expectedStatus: 403 },
   { name: 'application health is explicitly anonymous', path: '/api/application/health', expectedStatus: 200 },
   { name: 'alumni health is explicitly anonymous', path: '/api/alumni/health', expectedStatus: 200 },
+  { name: 'platform school review rejects anonymous access', path: '/api/platform/schools', expectedStatus: 401 },
+  { name: 'platform school review rejects wrong role', path: '/api/platform/schools', headers: alumniAdminHeaders, expectedStatus: 403 },
+  { name: 'platform school approval rejects anonymous access', path: '/api/platform/schools/school-1/approve', method: 'PATCH', body: { approverId: 'spoofed' }, expectedStatus: 401 },
+  { name: 'platform school approval rejects wrong role', path: '/api/platform/schools/school-1/approve', method: 'PATCH', headers: alumniAdminHeaders, body: { approverId: 'admin-1' }, expectedStatus: 403 },
   { name: 'current profile rejects anonymous request', path: '/api/profile/me', expectedStatus: 401 },
   { name: 'profile update rejects anonymous request', path: '/api/profile/me', method: 'PUT', body: { first_name: 'Test' }, expectedStatus: 401 },
   { name: 'current tenant rejects unresolved context', path: '/api/tenant/current', expectedStatus: 401 },
@@ -83,6 +89,8 @@ const routeSecurityCases: MatrixCase[] = [
   { name: 'alumni admin requests reject wrong tenant', path: '/api/alumni/admin/requests', headers: { ...alumniAdminHeaders, 'X-Institution-Id': 'school-b' }, expectedStatus: 403 },
   { name: 'audit events reject anonymous access', path: '/api/audit/events', expectedStatus: 401 },
   { name: 'audit events reject non-super-admin role', path: '/api/audit/events', headers: alumniAdminHeaders, expectedStatus: 403 },
+  { name: 'academic audit events reject anonymous access', path: '/api/audit/academic-events?studentId=student-1&action=grade.submitted', expectedStatus: 401 },
+  { name: 'academic audit events reject non-super-admin role', path: '/api/audit/academic-events?studentId=student-1&action=grade.submitted', headers: alumniAdminHeaders, expectedStatus: 403 },
   { name: 'alumni fulfillment validates status transition payload', path: '/api/alumni/admin/requests/request-123', method: 'PATCH', headers: alumniAdminHeaders, body: { status_code: 200, payment_status: 'settled' }, expectedStatus: 400 },
   { name: 'alumni card fulfillment validates status transition payload', path: '/api/alumni/admin/card-requests/card-123', method: 'PATCH', headers: alumniAdminHeaders, body: { status_code: 300, payment_status: 'settled' }, expectedStatus: 400 },
   { name: 'notifications validate target profile', path: '/api/notifications/%20', expectedStatus: 400 },

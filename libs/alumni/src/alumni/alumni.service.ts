@@ -9,6 +9,9 @@ import { randomUUID } from 'crypto';
 import { getSupabaseClient } from './config/supabase.config';
 import { NotificationsService } from '../../../notifications/src/notifications.service';
 import { AuditService } from '../../../audit/src/audit.service';
+import { domainEventPublisher, tryPublishDomainEvent } from '../../../events/src/domain-events';
+import { redactLogError } from '../../../observability/src/log-redaction';
+import { PostgresAlumniRepository } from './alumni-postgres.repository';
 import { RegisterAlumniDto } from './dto/register-alumni.dto';
 import { RequestRecordDto } from './dto/request-record.dto';
 import { CardApplicationDto } from './dto/card-application.dto';
@@ -43,6 +46,8 @@ export class AlumniService {
   private readonly logger = new Logger(AlumniService.name);
   private readonly notifications = new NotificationsService();
   private readonly audit = new AuditService();
+  private readonly postgres = new PostgresAlumniRepository();
+  private readonly eventPublisher = domainEventPublisher;
 
   calculateRecordFee(document_type: DocumentType, number_of_copies = 1) {
     if (!Object.values(DocumentType).includes(document_type)) {
@@ -74,6 +79,10 @@ export class AlumniService {
    */
   async registerAlumni(dto: RegisterAlumniDto): Promise<IAlumni> {
     this.validateRegistrationVerification(dto);
+
+    if (this.usePostgres(dto.tenant_id)) {
+      return this.postgres.registerAlumni(dto);
+    }
 
     const supabase = getSupabaseClient();
     const log_id = randomUUID();
@@ -107,7 +116,7 @@ export class AlumniService {
       .single();
 
     if (error) {
-      this.logger.error('registerAlumni failed', error.message);
+      this.logger.error('registerAlumni failed', redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 
@@ -136,7 +145,7 @@ export class AlumniService {
 
     if (accountError) {
       this.logger.warn(
-        `alumni account upsert failed (log already written) â€” ${accountError.message}`,
+        `alumni account upsert failed (log already written) â€” ${redactLogError(accountError)}`,
       );
     }
 
@@ -149,6 +158,10 @@ export class AlumniService {
    * No join, no FK â€” pure UUID lookup.
    */
   async getAlumniProfile(actor_uuid: string): Promise<IAlumni> {
+    if (this.hasPostgresConfigured()) {
+      return this.postgres.getAlumniProfile(actor_uuid);
+    }
+
     const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
@@ -178,10 +191,36 @@ export class AlumniService {
    * Event: alumni.record.requested.v1
    */
   async requestRecord(dto: RequestRecordDto): Promise<IAlumniRecordRequest> {
-    const supabase = getSupabaseClient();
-    const log_id = randomUUID();
     const numberOfCopies = dto.number_of_copies ?? 1;
     const fee = this.calculateRecordFee(dto.document_type, numberOfCopies);
+    if (this.usePostgres(dto.tenant_id)) {
+      const record = await this.postgres.requestRecord(dto, fee.total_amount);
+      await this.publishAlumniRecordRequestedEvent(dto, record.log_id, fee.total_amount);
+      await this.tryCreateNotification({
+        profileId: dto.actor_uuid,
+        title: 'Document request submitted',
+        body: `${dto.document_type} request is now queued for review.`,
+        metadata: {
+          action: 'alumni.record.requested',
+          actor_uuid: dto.actor_uuid,
+          tenant_id: dto.tenant_id,
+          log_id: record.log_id,
+        },
+      });
+      return {
+        ...record,
+        notification: {
+          type: 'alumni_record_requested',
+          actor_uuid: dto.actor_uuid,
+          tenant_id: dto.tenant_id,
+          title: 'Document request submitted',
+          body: `${dto.document_type} request is now queued for review.`,
+        },
+      } as IAlumniRecordRequest & { notification: Record<string, string> };
+    }
+
+    const supabase = getSupabaseClient();
+    const log_id = randomUUID();
 
     const payload: IAlumniRecordRequest = {
       log_id,
@@ -206,7 +245,7 @@ export class AlumniService {
       .single();
 
     if (error) {
-      this.logger.error('requestRecord failed', error.message);
+      this.logger.error('requestRecord failed', redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 
@@ -214,7 +253,7 @@ export class AlumniService {
       `Record requested â€” doc: ${dto.document_type}, actor_uuid: ${dto.actor_uuid}`,
     );
 
-    await this.notifications.tryCreate({
+    await this.tryCreateNotification({
       profileId: dto.actor_uuid,
       title: 'Document request submitted',
       body: `${dto.document_type} request is now queued for review.`,
@@ -225,9 +264,11 @@ export class AlumniService {
         log_id,
       },
     });
+    const record = data as IAlumniRecordRequest;
+    await this.publishAlumniRecordRequestedEvent(dto, record.log_id, fee.total_amount);
 
     return {
-      ...(data as IAlumniRecordRequest),
+      ...record,
       notification: {
         type: 'alumni_record_requested',
         actor_uuid: dto.actor_uuid,
@@ -243,6 +284,10 @@ export class AlumniService {
    * Returns all document requests for an alumni, newest first.
    */
   async getRecordRequests(actor_uuid: string): Promise<IAlumniRecordRequest[]> {
+    if (this.hasPostgresConfigured()) {
+      return this.postgres.getRecordRequests(actor_uuid);
+    }
+
     const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
@@ -253,7 +298,7 @@ export class AlumniService {
       .order('created_at', { ascending: false });
 
     if (error) {
-      this.logger.error('getRecordRequests failed', error.message);
+      this.logger.error('getRecordRequests failed', redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 
@@ -267,6 +312,10 @@ export class AlumniService {
   async applyForCard(dto: CardApplicationDto): Promise<IAlumniCardApplication> {
     if (!dto.id_photo_url?.trim()) {
       throw new BadRequestException('ID photo URL is required for alumni card applications');
+    }
+
+    if (this.usePostgres(dto.tenant_id)) {
+      return this.postgres.applyForCard(dto);
     }
 
     const supabase = getSupabaseClient();
@@ -293,7 +342,7 @@ export class AlumniService {
       .single();
 
     if (error) {
-      this.logger.error('applyForCard failed', error.message);
+      this.logger.error('applyForCard failed', redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 
@@ -306,6 +355,10 @@ export class AlumniService {
    * Returns all card applications for the given alumnus.
    */
   async getCardApplications(actor_uuid: string): Promise<IAlumniCardApplication[]> {
+    if (this.hasPostgresConfigured()) {
+      return this.postgres.getCardApplications(actor_uuid);
+    }
+
     const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
@@ -316,14 +369,18 @@ export class AlumniService {
       .order('created_at', { ascending: false });
 
     if (error) {
-      this.logger.error('getCardApplications failed', error.message);
+      this.logger.error('getCardApplications failed', redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 
     return (data ?? []) as IAlumniCardApplication[];
   }
 
-  async getAllCardApplications(): Promise<IAlumniCardApplication[]> {
+  async getAllCardApplications(institutionId?: string): Promise<IAlumniCardApplication[]> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.getAllCardApplications(institutionId);
+    }
+
     const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
@@ -333,7 +390,7 @@ export class AlumniService {
       .order('created_at', { ascending: false });
 
     if (error) {
-      this.logger.error('getAllCardApplications failed', error.message);
+      this.logger.error('getAllCardApplications failed', redactLogError(error));
       throw new InternalServerErrorException(error.message);
     }
 
@@ -343,7 +400,11 @@ export class AlumniService {
   // â”€â”€â”€ Admin endpoints (read all, not scoped to one user) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** GET /alumni/admin/registry â€” all registration logs */
-  async getAllRegistrations(): Promise<IAlumni[]> {
+  async getAllRegistrations(institutionId?: string): Promise<IAlumni[]> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.getAllRegistrations(institutionId);
+    }
+
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .schema(SCHEMA)
@@ -355,7 +416,11 @@ export class AlumniService {
   }
 
   /** GET /alumni/admin/requests â€” all document requests */
-  async getAllRecordRequests(): Promise<IAlumniRecordRequest[]> {
+  async getAllRecordRequests(institutionId?: string): Promise<IAlumniRecordRequest[]> {
+    if (this.usePostgres(institutionId)) {
+      return this.postgres.getAllRecordRequests(institutionId);
+    }
+
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .schema(SCHEMA)
@@ -371,7 +436,36 @@ export class AlumniService {
     log_id: string,
     status_code: number,
     payment_status?: PaymentStatus | 'pending' | 'paid',
+    institutionId?: string,
   ): Promise<IAlumniRecordRequest & { notification: Record<string, string> }> {
+    if (this.usePostgres(institutionId)) {
+      const record = await this.postgres.updateRecordStatus(institutionId, log_id, status_code, payment_status);
+      await this.publishAlumniRecordStatusUpdatedEvent(record.tenant_id, record.actor_uuid, log_id, status_code, payment_status);
+      await this.tryCreateNotification({
+        profileId: record.actor_uuid,
+        title: 'Document request updated',
+        body: `Request ${log_id} status is now ${status_code}.`,
+        metadata: {
+          action: 'alumni.record.status_updated',
+          actor_uuid: record.actor_uuid,
+          tenant_id: record.tenant_id,
+          log_id,
+          status_code,
+          payment_status,
+        },
+      });
+      return {
+        ...record,
+        notification: {
+          type: 'alumni_request_status_updated',
+          actor_uuid: record.actor_uuid,
+          tenant_id: record.tenant_id,
+          title: 'Document request updated',
+          body: `Request ${log_id} status is now ${status_code}.`,
+        },
+      };
+    }
+
     const supabase = getSupabaseClient();
     const updates: Record<string, unknown> = { status_code };
     if (payment_status) updates.payment_status = payment_status;
@@ -385,6 +479,7 @@ export class AlumniService {
       .single();
     if (error) throw new InternalServerErrorException(error.message);
     const record = data as IAlumniRecordRequest;
+    await this.publishAlumniRecordStatusUpdatedEvent(record.tenant_id, record.actor_uuid, log_id, status_code, payment_status);
     await this.audit.record({
       action: 'alumni.record.status_updated',
       actor: record.actor_uuid,
@@ -392,7 +487,7 @@ export class AlumniService {
       target: log_id,
       metadata: { status_code, payment_status },
     });
-    await this.notifications.tryCreate({
+    await this.tryCreateNotification({
       profileId: record.actor_uuid,
       title: 'Document request updated',
       body: `Request ${log_id} status is now ${status_code}.`,
@@ -422,7 +517,35 @@ export class AlumniService {
     log_id: string,
     status_code: number,
     payment_status?: PaymentStatus | 'pending' | 'paid',
+    institutionId?: string,
   ): Promise<IAlumniCardApplication & { notification: Record<string, string> }> {
+    if (this.usePostgres(institutionId)) {
+      const card = await this.postgres.updateCardApplicationStatus(institutionId, log_id, status_code, payment_status);
+      await this.tryCreateNotification({
+        profileId: card.actor_uuid,
+        title: 'Alumni card request updated',
+        body: `Card request ${log_id} status is now ${status_code}.`,
+        metadata: {
+          action: 'alumni.card.status_updated',
+          actor_uuid: card.actor_uuid,
+          tenant_id: card.tenant_id,
+          log_id,
+          status_code,
+          payment_status,
+        },
+      });
+      return {
+        ...card,
+        notification: {
+          type: 'alumni_card_status_updated',
+          actor_uuid: card.actor_uuid,
+          tenant_id: card.tenant_id,
+          title: 'Alumni card request updated',
+          body: `Card request ${log_id} status is now ${status_code}.`,
+        },
+      };
+    }
+
     const supabase = getSupabaseClient();
     const updates: Record<string, unknown> = { status_code };
     if (payment_status) updates.payment_status = payment_status;
@@ -438,7 +561,7 @@ export class AlumniService {
     if (error) throw new InternalServerErrorException(error.message);
 
     const card = data as IAlumniCardApplication;
-    await this.notifications.tryCreate({
+    await this.tryCreateNotification({
       profileId: card.actor_uuid,
       title: 'Alumni card request updated',
       body: `Card request ${log_id} status is now ${status_code}.`,
@@ -472,6 +595,10 @@ export class AlumniService {
   }
 
   async getCommunicationLog(actor_uuid: string) {
+    if (this.hasPostgresConfigured()) {
+      return this.postgres.getCommunicationLog(actor_uuid);
+    }
+
     const supabase = getSupabaseClient();
     const [registration, records, cards] = await Promise.all([
       supabase
@@ -527,6 +654,11 @@ export class AlumniService {
     program: string;
     graduation_year: number;
   }): Promise<void> {
+    if (this.usePostgres(payload.tenant_id)) {
+      await this.postgres.logGraduationEvent(payload);
+      return;
+    }
+
     const supabase = getSupabaseClient();
     const log_id = randomUUID();
 
@@ -549,7 +681,7 @@ export class AlumniService {
       });
 
     if (error) {
-      this.logger.error('logGraduationEvent failed', error.message);
+      this.logger.error('logGraduationEvent failed', redactLogError(error));
       return;
     }
 
@@ -572,7 +704,7 @@ export class AlumniService {
 
     if (accountError) {
       this.logger.warn(
-        `graduation account upsert failed (log already written) â€” ${accountError.message}`,
+        `graduation account upsert failed (log already written) â€” ${redactLogError(accountError)}`,
       );
     }
   }
@@ -588,6 +720,54 @@ export class AlumniService {
     if (!dto.student_id?.trim()) {
       throw new BadRequestException('Student ID is required for alumni student-record verification');
     }
+  }
+
+  private usePostgres(institutionId?: string): institutionId is string {
+    return this.hasPostgresConfigured() && Boolean(institutionId?.trim());
+  }
+
+  private hasPostgresConfigured() {
+    return Boolean(process.env.ALUMNI_DATABASE_URL?.trim());
+  }
+
+  private async tryCreateNotification(input: Parameters<NotificationsService['tryCreate']>[0]) {
+    try {
+      await this.notifications.tryCreate(input);
+    } catch (error) {
+      this.logger.warn(`notification side effect skipped: ${redactLogError(error)}`);
+    }
+  }
+
+  private async publishAlumniRecordRequestedEvent(dto: RequestRecordDto, logId: string, feeAmount: number) {
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'alumni.record.requested',
+      tenantId: dto.tenant_id,
+      actorId: dto.actor_uuid,
+      payload: {
+        logId,
+        documentType: dto.document_type,
+        feeAmount,
+      },
+    });
+  }
+
+  private async publishAlumniRecordStatusUpdatedEvent(
+    tenantId: string,
+    actorId: string,
+    logId: string,
+    statusCode: number,
+    paymentStatus?: PaymentStatus | 'pending' | 'paid',
+  ) {
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'alumni.record.status_updated',
+      tenantId,
+      actorId,
+      payload: {
+        logId,
+        statusCode,
+        paymentStatus,
+      },
+    });
   }
 }
 

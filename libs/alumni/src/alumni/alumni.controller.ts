@@ -133,7 +133,7 @@ export class AlumniController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
-    return this.alumniService.getAllRegistrations();
+    return this.alumniService.getAllRegistrations(institutionId);
   }
 
   /**
@@ -149,7 +149,7 @@ export class AlumniController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
-    return this.alumniService.getAllRecordRequests();
+    return this.alumniService.getAllRecordRequests(institutionId);
   }
 
   @Get('admin/card-requests')
@@ -161,7 +161,7 @@ export class AlumniController {
     @Headers('x-school-slug') schoolSlug?: string,
   ) {
     authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
-    return this.alumniService.getAllCardApplications();
+    return this.alumniService.getAllCardApplications(institutionId);
   }
 
   /**
@@ -180,7 +180,7 @@ export class AlumniController {
   ) {
     authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
     this.validateRequestStatus(body);
-    return this.alumniService.updateRecordStatus(log_id, body.status_code, body.payment_status);
+    return this.alumniService.updateRecordStatus(log_id, body.status_code, body.payment_status, institutionId);
   }
 
   @Patch('admin/card-requests/:log_id')
@@ -195,7 +195,7 @@ export class AlumniController {
   ) {
     authorizeRoute({ authorization, role, userId, institutionId, schoolSlug, allowedRoles: ['alumni_admin', 'super_admin'] });
     this.validateRequestStatus(body);
-    return this.alumniService.updateCardApplicationStatus(log_id, body.status_code, body.payment_status);
+    return this.alumniService.updateCardApplicationStatus(log_id, body.status_code, body.payment_status, institutionId);
   }
 
   private validateRecordRequest(dto: RequestRecordDto) {

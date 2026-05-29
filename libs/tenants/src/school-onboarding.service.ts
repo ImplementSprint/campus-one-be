@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { domainEventPublisher, tryPublishDomainEvent } from '../../events/src/domain-events';
 import { RESERVED_TENANT_SLUGS, normalizeSchoolSlug } from './tenant-resolution.middleware';
 import { TenantRegistryRepository } from './tenant-registry.repository';
 import { mapInstitutionProfileToPublicSchool } from './public-school.service';
@@ -17,6 +18,8 @@ function hashToken(token: string): string {
 
 @Injectable()
 export class SchoolOnboardingService {
+  private readonly eventPublisher = domainEventPublisher;
+
   constructor(private readonly tenantRegistryRepository: TenantRegistryRepository) {}
 
   async registerSchool(dto: RegisterSchoolDto) {
@@ -62,6 +65,18 @@ export class SchoolOnboardingService {
           targetSubdomain,
           schoolType: clean(dto.schoolType),
         },
+      },
+    });
+
+    await tryPublishDomainEvent(this.eventPublisher, {
+      eventType: 'school.registration.submitted',
+      tenantId: result.institution.id,
+      actorId: result.invitation.email,
+      payload: {
+        schoolId: result.institution.id,
+        schoolSlug: result.institution.targetSubdomain,
+        schoolName: result.institution.name,
+        schoolType: result.institution.schoolType,
       },
     });
 

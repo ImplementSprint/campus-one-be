@@ -6,6 +6,21 @@ import { ProfessorService } from './professor.service';
 export class ProfessorController {
   constructor(private readonly professorService: ProfessorService) {}
 
+  @Get(':professorId/profile')
+  async getProfile(
+    @Param('professorId') professorId: string,
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-role') role?: string,
+    @Headers('x-user-id') userId?: string,
+    @Headers('x-institution-id') institutionId?: string,
+    @Headers('x-school-slug') schoolSlug?: string,
+  ) {
+    this.authorizeProfessor(authorization, role, userId, institutionId, schoolSlug);
+    this.validateProfessorId(professorId);
+
+    return this.professorService.getProfile(professorId);
+  }
+
   @Get(':professorId/classes')
   async getClasses(
     @Param('professorId') professorId: string,
@@ -20,7 +35,7 @@ export class ProfessorController {
       throw new BadRequestException('professor id is required');
     }
 
-    return this.professorService.getClasses(professorId);
+    return this.professorService.getClasses(professorId, institutionId);
   }
 
   @Get(':professorId/schedule')
@@ -37,7 +52,7 @@ export class ProfessorController {
       throw new BadRequestException('professor id is required');
     }
 
-    return this.professorService.getSchedule(professorId);
+    return this.professorService.getSchedule(professorId, institutionId);
   }
 
   @Get(':professorId/classes/:classId/announcements')
@@ -154,7 +169,7 @@ export class ProfessorController {
       throw new BadRequestException('class id is required');
     }
 
-    return this.professorService.getRoster(professorId, classId);
+    return this.professorService.getRoster(professorId, classId, institutionId);
   }
 
   private validateProfessorId(professorId: string) {
